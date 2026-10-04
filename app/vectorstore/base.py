@@ -6,7 +6,7 @@ Enforces workspace isolation by requiring explicit workspace_id parameters acros
 import uuid
 from abc import ABC, abstractmethod
 
-from app.vectorstore.models import VectorPoint
+from app.vectorstore.models import SearchResult, VectorPoint
 
 
 class VectorStoreError(Exception):
@@ -77,6 +77,27 @@ class VectorStore(ABC):
 
         Args:
             workspace_id: The tenant workspace UUID.
+        """
+        pass
+
+    @abstractmethod
+    async def search(
+        self,
+        workspace_id: uuid.UUID,
+        query_vector: list[float],
+        limit: int = 10,
+        score_threshold: float | None = None,
+    ) -> list[SearchResult]:
+        """Searches for nearest neighbor vector points within the specified workspace.
+
+        Args:
+            workspace_id: The tenant workspace UUID (mandatory filter).
+            query_vector: Dense embedding vector of the search query.
+            limit: Maximum number of points to retrieve.
+            score_threshold: Minimum similarity score threshold.
+
+        Returns:
+            List of SearchResult objects ordered by similarity descending.
         """
         pass
 

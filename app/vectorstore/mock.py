@@ -1,9 +1,8 @@
-"""In-memory Mock Vector Store for testing and isolated unit tests."""
-
+import math
 import uuid
 
 from app.vectorstore.base import VectorStore, VectorStoreError
-from app.vectorstore.models import VectorPoint
+from app.vectorstore.models import SearchResult, VectorPoint
 
 
 class MockVectorStore(VectorStore):
@@ -79,6 +78,44 @@ class MockVectorStore(VectorStore):
     async def count_points(self, workspace_id: uuid.UUID) -> int:
         ws_key = str(workspace_id)
         return len(self._storage.get(ws_key, {}))
+
+    async def search(
+        self,
+        workspace_id: uuid.UUID,
+        query_vector: list[float],
+        limit: int = 10,
+        score_threshold: float | None = None,
+    ) -> list[SearchResult]:
+        if not self._is_healthy:
+            raise VectorStoreError("Mock vector store is simulated unhealthy.")
+
+        ws_key = str(workspace_id)
+        points_map = self._storage.get(ws_key, {})
+        if not points_map:
+            return []
+
+        scored_points: list[SearchResult] = []
+        for pt in points_map.values():
+            # Calculate cosine similarity
+            dot = sum(a * b for a, b in zip(query_vector, pt.vector, strict=False))
+            norm_a = math.sqrt(sum(a * a for a in query_vector)) or 1.0
+            norm_b = math.sqrt(sum(b * b for b in pt.vector)) or 1.0
+            score = dot / (norm_a * norm_b)
+
+            if score_threshold is not None and score < score_threshold:
+                continue
+
+            scored_points.append(
+                SearchResult(
+                    id=pt.id,
+                    score=round(score, 6),
+                    payload=pt.payload,
+                    vector=pt.vector,
+                )
+            )
+
+        scored_points.sort(key=lambda x: x.score, reverse=True)
+        return scored_points[:limit]
 
     async def health_check(self) -> bool:
         return self._is_healthy

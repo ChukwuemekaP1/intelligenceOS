@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Any
 
@@ -43,43 +44,63 @@ class GeminiProvider(LLMProvider):
 
     async def generate_text(self, request: CompletionRequest) -> CompletionResponse:
         client = self._get_client()
+        from google.genai import errors, types
 
-        try:
-            from google.genai import types
+        config = types.GenerateContentConfig(
+            temperature=request.temperature,
+            max_output_tokens=request.max_tokens,
+            system_instruction=request.system_instruction,
+        )
 
-            config = types.GenerateContentConfig(
-                temperature=request.temperature,
-                max_output_tokens=request.max_tokens,
-                system_instruction=request.system_instruction,
-            )
+        max_retries = 3
+        backoff_seconds = 1.5
 
-            response = await client.aio.models.generate_content(
-                model=self._model,
-                contents=request.prompt,
-                config=config,
-            )
+        for attempt in range(max_retries):
+            try:
+                response = await client.aio.models.generate_content(
+                    model=self._model,
+                    contents=request.prompt,
+                    config=config,
+                )
 
-            text_output = response.text or ""
+                text_output = response.text or ""
 
-            # Extract usage if present
-            usage_dict = None
-            if hasattr(response, "usage_metadata") and response.usage_metadata:
-                usage_dict = {
-                    "prompt_tokens": getattr(response.usage_metadata, "prompt_token_count", 0),
-                    "completion_tokens": getattr(
-                        response.usage_metadata, "candidates_token_count", 0
-                    ),
-                    "total_tokens": getattr(response.usage_metadata, "total_token_count", 0),
-                }
+                # Extract usage if present
+                usage_dict = None
+                if hasattr(response, "usage_metadata") and response.usage_metadata:
+                    usage_dict = {
+                        "prompt_tokens": getattr(response.usage_metadata, "prompt_token_count", 0),
+                        "completion_tokens": getattr(
+                            response.usage_metadata, "candidates_token_count", 0
+                        ),
+                        "total_tokens": getattr(response.usage_metadata, "total_token_count", 0),
+                    }
 
-            return CompletionResponse(
-                text=text_output,
-                model=self._model,
-                usage=usage_dict,
-            )
+                return CompletionResponse(
+                    text=text_output,
+                    model=self._model,
+                    usage=usage_dict,
+                )
 
-        except Exception as exc:
-            self._handle_exception(exc)
+            except Exception as exc:
+                is_transient = False
+                if isinstance(exc, errors.APIError):
+                    code = getattr(exc, "code", None)
+                    if code in (429, 500, 502, 503, 504):
+                        is_transient = True
+
+                if is_transient and attempt < max_retries - 1:
+                    logger.warning(
+                        "Gemini transient error on attempt %d: %s. Retrying in %.1fs...",
+                        attempt + 1,
+                        exc,
+                        backoff_seconds,
+                    )
+                    await asyncio.sleep(backoff_seconds)
+                    backoff_seconds *= 2.0
+                    continue
+
+                self._handle_exception(exc)
 
     async def health_check(self) -> bool:
         """Verifies Gemini client can be initialized and pinged."""

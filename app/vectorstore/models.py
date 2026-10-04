@@ -26,3 +26,16 @@ class VectorPoint(BaseModel):
             "document_id, document_version_id, chunk_id, source_type, page_number, text."
         ),
     )
+
+
+class SearchResult(BaseModel):
+    """Represents a scored vector search match with traceability payload."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: uuid.UUID = Field(..., description="Matching point/chunk UUID.")
+    score: float = Field(..., description="Similarity or relevance score.")
+    payload: dict[str, Any] = Field(default_factory=dict, description="Metadata payload.")
+    vector: list[float] | None = Field(
+        default=None, description="Optional vector embedding coordinates."
+    )

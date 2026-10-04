@@ -11,7 +11,7 @@ from qdrant_client import AsyncQdrantClient, models
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.vectorstore.base import VectorStore, VectorStoreError
-from app.vectorstore.models import VectorPoint
+from app.vectorstore.models import SearchResult, VectorPoint
 
 logger = get_logger("app.vectorstore.qdrant")
 
@@ -191,6 +191,51 @@ class QdrantVectorStore(VectorStore):
         except Exception as exc:
             logger.error(f"Failed counting points for workspace {workspace_id}: {exc}")
             raise VectorStoreError(f"Qdrant count failed: {exc}") from exc
+
+    async def search(
+        self,
+        workspace_id: uuid.UUID,
+        query_vector: list[float],
+        limit: int = 10,
+        score_threshold: float | None = None,
+    ) -> list[SearchResult]:
+        ws_str = str(workspace_id)
+        tenant_filter = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="workspace_id",
+                    match=models.MatchValue(value=ws_str),
+                ),
+            ]
+        )
+        try:
+            response = await self._client.query_points(
+                collection_name=self.collection_name,
+                query=query_vector,
+                query_filter=tenant_filter,
+                limit=limit,
+                score_threshold=score_threshold,
+                with_payload=True,
+            )
+
+            results: list[SearchResult] = []
+            for pt in response.points:
+                try:
+                    pt_id = uuid.UUID(str(pt.id))
+                except ValueError:
+                    continue
+
+                results.append(
+                    SearchResult(
+                        id=pt_id,
+                        score=float(pt.score),
+                        payload=pt.payload or {},
+                    )
+                )
+            return results
+        except Exception as exc:
+            logger.error(f"Failed searching Qdrant for workspace {workspace_id}: {exc}")
+            raise VectorStoreError(f"Qdrant vector search failed: {exc}") from exc
 
     async def health_check(self) -> bool:
         try:

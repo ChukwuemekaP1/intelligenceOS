@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     # LLM Provider Configuration
     LLM_PROVIDER: Literal["gemini", "mock"] = "gemini"
     GEMINI_API_KEY: SecretStr | None = None
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_MODEL: str = "gemini-3.8-flash"
 
     # Logging
     LOG_LEVEL: str = "INFO"
@@ -75,8 +75,21 @@ class Settings(BaseSettings):
 
     # =========================================================================
     # Phase 2: Background Ingestion Queue (Redis)
-    # =========================================================================
     INGESTION_QUEUE_NAME: str = "intelligenceos:jobs:ingestion"
+
+    # =========================================================================
+    # Phase 3: RAG Retrieval, Reranking & Generation
+    # =========================================================================
+    RAG_INITIAL_TOP_K: int = 20
+    RAG_FINAL_TOP_K: int = 5
+    RAG_SIMILARITY_THRESHOLD: float | None = 0.0
+    RAG_ENABLE_RERANKING: bool = True
+    RAG_RETRIEVAL_MODE: Literal["semantic", "hybrid"] = "hybrid"
+    RERANKER_TYPE: Literal["local", "none", "external"] = "local"
+    RERANKER_API_KEY: SecretStr | None = None
+    RERANKER_ENDPOINT: str | None = None
+    RERANKER_MODEL: str | None = None
+    RAG_MAX_CONTEXT_CHARS: int = 16000
 
     @property
     def async_database_url(self) -> str:
