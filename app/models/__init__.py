@@ -3,6 +3,7 @@
 Exports identity, workspace, and knowledge ingestion pipeline entities.
 """
 
+from app.models.agent_execution import AgentExecution, ExecutionStatus
 from app.models.chunk import Chunk
 from app.models.conversation import Conversation
 from app.models.document import Document
@@ -27,4 +28,6 @@ __all__ = [
     "Conversation",
     "Message",
     "MessageRole",
+    "AgentExecution",
+    "ExecutionStatus",
 ]

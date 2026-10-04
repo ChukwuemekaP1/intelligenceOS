@@ -88,9 +88,7 @@ class HybridRetriever(BaseRetriever):
         for cid in sorted_chunk_ids[:top_k]:
             candidate = chunk_map[cid]
             # Create a copy with the merged RRF score
-            updated_candidate = candidate.model_copy(
-                update={"score": round(rrf_scores[cid], 6)}
-            )
+            updated_candidate = candidate.model_copy(update={"score": round(rrf_scores[cid], 6)})
             merged.append(updated_candidate)
 
         return merged

@@ -91,6 +91,14 @@ class Settings(BaseSettings):
     RERANKER_MODEL: str | None = None
     RAG_MAX_CONTEXT_CHARS: int = 16000
 
+    # Phase 4: Agent & Tool Orchestration Layer
+    AGENT_MAX_STEPS: int = 6
+    AGENT_TIMEOUT_SECONDS: float = 30.0
+    AGENT_SQL_ROW_LIMIT: int = 50
+    AGENT_SQL_TIMEOUT_SECONDS: float = 5.0
+    WEB_SEARCH_PROVIDER: str = "mock"
+    WEB_SEARCH_MAX_RESULTS: int = 5
+
     @property
     def async_database_url(self) -> str:
         if self.DATABASE_URL:

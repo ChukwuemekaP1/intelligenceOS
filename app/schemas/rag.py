@@ -71,16 +71,10 @@ class RAGMetrics(BaseModel):
 
     retrieval_count: int = Field(description="Number of initial candidates retrieved")
     final_context_count: int = Field(description="Number of candidates included in LLM context")
-    total_latency_ms: float = Field(
-        description="Total end-to-end pipeline latency in milliseconds"
-    )
-    retrieval_latency_ms: float = Field(
-        description="Candidate retrieval latency in milliseconds"
-    )
+    total_latency_ms: float = Field(description="Total end-to-end pipeline latency in milliseconds")
+    retrieval_latency_ms: float = Field(description="Candidate retrieval latency in milliseconds")
     rerank_latency_ms: float = Field(description="Reranking latency in milliseconds")
-    generation_latency_ms: float = Field(
-        description="LLM generation latency in milliseconds"
-    )
+    generation_latency_ms: float = Field(description="LLM generation latency in milliseconds")
 
 
 class ConversationCreate(BaseModel):

@@ -1,3 +1,9 @@
+from app.schemas.agent import (
+    AgentExecuteRequest,
+    AgentExecutionResponse,
+    AgentExecutionSummary,
+    AgentStepResponse,
+)
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserResponse
 from app.schemas.health import HealthResponse, ReadinessResponse
 from app.schemas.llm import CompletionRequest, CompletionResponse
@@ -57,4 +63,8 @@ __all__ = [
     "MessageResponse",
     "QuestionRequest",
     "QuestionResponse",
+    "AgentExecuteRequest",
+    "AgentExecutionResponse",
+    "AgentExecutionSummary",
+    "AgentStepResponse",
 ]

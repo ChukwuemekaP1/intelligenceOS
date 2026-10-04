@@ -24,11 +24,7 @@ def get_reranker(
         return PassThroughReranker()
 
     if cfg.RERANKER_TYPE == "external":
-        api_key = (
-            cfg.RERANKER_API_KEY.get_secret_value()
-            if cfg.RERANKER_API_KEY
-            else None
-        )
+        api_key = cfg.RERANKER_API_KEY.get_secret_value() if cfg.RERANKER_API_KEY else None
         return ExternalReranker(
             api_key=api_key,
             endpoint=cfg.RERANKER_ENDPOINT,

@@ -35,9 +35,7 @@ class RAGEvaluationPayload(BaseModel):
     answer: str
     citations: list[Citation] = Field(default_factory=list)
     latency_ms: dict[str, float] = Field(default_factory=dict)
-    timestamp: str = Field(
-        default_factory=lambda: datetime.now(UTC).isoformat()
-    )
+    timestamp: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod

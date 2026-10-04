@@ -56,17 +56,13 @@ class LocalReranker(BaseReranker):
 
             # Combine signals into normalized rerank score [0.0, 1.0]
             lexical_score = min(
-                (term_coverage * 0.4)
-                + (tf_density * 0.2)
-                + exact_phrase_bonus
-                + source_bonus,
+                (term_coverage * 0.4) + (tf_density * 0.2) + exact_phrase_bonus + source_bonus,
                 1.0,
             )
 
             # Blend with initial score
-            blended_score = (
-                (candidate.score * self.initial_score_weight)
-                + (lexical_score * self.rerank_score_weight)
+            blended_score = (candidate.score * self.initial_score_weight) + (
+                lexical_score * self.rerank_score_weight
             )
 
             updated = candidate.model_copy(update={"score": round(blended_score, 4)})

@@ -20,9 +20,7 @@ class BuiltContext(BaseModel):
     )
     total_characters: int = Field(description="Total character length of the built context")
     token_count_estimate: int = Field(description="Approximate token count of context")
-    truncated: bool = Field(
-        description="True if some candidate chunks were excluded due to budget"
-    )
+    truncated: bool = Field(description="True if some candidate chunks were excluded due to budget")
 
 
 class ContextBuilder:
@@ -40,9 +38,7 @@ class ContextBuilder:
 
         if not candidates:
             empty_msg = (
-                "<context>\n"
-                "  No relevant documents found in workspace knowledge base.\n"
-                "</context>"
+                "<context>\n  No relevant documents found in workspace knowledge base.\n</context>"
             )
             return BuiltContext(
                 formatted_context=empty_msg,

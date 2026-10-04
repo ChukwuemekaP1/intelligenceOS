@@ -28,6 +28,7 @@ dependencies = [
     "qdrant-client>=1.19.1",
     "boto3>=1.43.108",
     "python-multipart>=0.0.32",
+    "langgraph>=1.2.12",
 ]
 
 [project.optional-dependencies]
