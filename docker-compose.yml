@@ -1,0 +1,74 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: intelligenceos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: intelligenceos
+      POSTGRES_PASSWORD: intelligenceos_secret
+      POSTGRES_DB: intelligenceos
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U intelligenceos -d intelligenceos"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - intelligenceos-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: intelligenceos-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - intelligenceos-network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: intelligenceos-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      POSTGRES_SERVER: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: intelligenceos
+      POSTGRES_PASSWORD: intelligenceos_secret
+      POSTGRES_DB: intelligenceos
+      DATABASE_URL: postgresql+asyncpg://intelligenceos:intelligenceos_secret@postgres:5432/intelligenceos
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./tests:/app/tests
+    networks:
+      - intelligenceos-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  intelligenceos-network:
+    driver: bridge
