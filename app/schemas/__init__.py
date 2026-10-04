@@ -1,6 +1,13 @@
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserResponse
 from app.schemas.health import HealthResponse, ReadinessResponse
 from app.schemas.llm import CompletionRequest, CompletionResponse
+from app.schemas.source import (
+    ChunkResponse,
+    DocumentResponse,
+    DocumentVersionResponse,
+    SourceResponse,
+    UrlSourceCreate,
+)
 from app.schemas.workspace import (
     MemberAddRequest,
     MemberResponse,
@@ -23,4 +30,9 @@ __all__ = [
     "ReadinessResponse",
     "CompletionRequest",
     "CompletionResponse",
+    "UrlSourceCreate",
+    "SourceResponse",
+    "DocumentResponse",
+    "DocumentVersionResponse",
+    "ChunkResponse",
 ]

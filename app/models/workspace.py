@@ -9,6 +9,7 @@ from app.models.base import TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.membership import Membership
+    from app.models.source import Source
 
 
 class Workspace(Base, TimestampMixin):
@@ -27,6 +28,11 @@ class Workspace(Base, TimestampMixin):
     # Relationships
     memberships: Mapped[list["Membership"]] = relationship(
         "Membership",
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+    )
+    sources: Mapped[list["Source"]] = relationship(
+        "Source",
         back_populates="workspace",
         cascade="all, delete-orphan",
     )

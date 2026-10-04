@@ -7,10 +7,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install curl and dos2unix
+# Install system utilities and tesseract OCR engine
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     dos2unix \
+    tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for fast, reliable package installations

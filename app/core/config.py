@@ -43,6 +43,41 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: Literal["json", "console"] = "json"
 
+    # =========================================================================
+    # Phase 2: Object Storage (S3-Compatible / MinIO)
+    # =========================================================================
+    # Storage backend: 's3' (MinIO/S3), 'local' (disk), or 'mock' (in-memory tests)
+    STORAGE_BACKEND: Literal["s3", "local", "mock"] = "s3"
+    S3_ENDPOINT_URL: str = "http://minio:9000"
+    S3_ACCESS_KEY: str = "minioadmin"
+    S3_SECRET_KEY: SecretStr = SecretStr("minioadmin")
+    S3_BUCKET_NAME: str = "intelligenceos-sources"
+    S3_REGION: str = "us-east-1"
+    LOCAL_STORAGE_DIR: str = "./storage_data"
+    MAX_UPLOAD_SIZE_BYTES: int = 20 * 1024 * 1024  # 20 MB limit
+
+    # =========================================================================
+    # Phase 2: Vector Storage (Qdrant)
+    # =========================================================================
+    QDRANT_HOST: str = "qdrant"
+    QDRANT_PORT: int = 6333
+    QDRANT_URL: str | None = None
+    QDRANT_API_KEY: SecretStr | None = None
+    QDRANT_COLLECTION: str = "intelligenceos_chunks"
+
+    # =========================================================================
+    # Phase 2: Embedding Provider Configuration
+    # =========================================================================
+    # Select between 'gemini' (live embeddings) or 'mock' (fast deterministic offline vectors)
+    EMBEDDING_PROVIDER: Literal["gemini", "mock"] = "gemini"
+    GEMINI_EMBEDDING_MODEL: str = "text-embedding-004"
+    EMBEDDING_DIMENSION: int = 768
+
+    # =========================================================================
+    # Phase 2: Background Ingestion Queue (Redis)
+    # =========================================================================
+    INGESTION_QUEUE_NAME: str = "intelligenceos:jobs:ingestion"
+
     @property
     def async_database_url(self) -> str:
         if self.DATABASE_URL:

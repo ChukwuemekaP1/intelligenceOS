@@ -58,8 +58,8 @@ async def get_active_workspace(
 
 
 async def get_workspace_membership(
-    workspace: Workspace = Depends(get_active_workspace),
     current_user: User = Depends(get_current_user),
+    workspace: Workspace = Depends(get_active_workspace),
     session: AsyncSession = Depends(get_db),
 ) -> Membership:
     """Dependency that verifies the current user has membership in the active workspace."""
