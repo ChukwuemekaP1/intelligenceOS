@@ -1,0 +1,63 @@
+================================================================================
+INTELLIGENCEOS CUSTOMER SUPPORT KNOWLEDGE BASE & TROUBLESHOOTING GUIDE
+Document ID: KB-2026-V4
+Classification: Customer-Facing Support
+================================================================================
+
+1. COMMON SYSTEM ERROR CODES & RESOLUTIONS
+
+ERR_429_RATE_LIMIT
+Cause: The workspace has exceeded its rate limit quota for tokens per minute (TPM) or requests per minute (RPM).
+Resolution: Wait 60 seconds before retrying the request. Upgrading from the Free Tier to the Pro Tier increases rate limits by 10x.
+
+ERR_INGEST_UNSUPPORTED_FORMAT
+Cause: An uploaded document format is not recognized.
+Resolution: IntelligenceOS officially supports PDF (.pdf), Plain Text (.txt), Markdown (.md), Comma-Separated Values (.csv), and Word documents (.docx). Ensure files do not exceed the per-file size limits.
+
+ERR_QDRANT_UNREACHABLE_503
+Cause: The vector database cluster timed out during query or upsert.
+Resolution: Verify network connectivity or check system status at status.intelligenceos.internal. If persistent, notify engineering operations to review Qdrant Cloud health.
+
+ERR_QUEUE_BACKPRESSURE
+Cause: Background worker queue has experienced a burst of ingestion jobs.
+Resolution: Ingestion jobs remain queued safely in Redis until workers drain the backlog. Typical queue drain time during peak load is under 3 minutes.
+
+
+2. SUBSCRIPTION TIERS AND RESOURCE QUOTAS
+
+Free Tier:
+- Workspaces: Maximum 3 workspaces per account.
+- Sources: Maximum 50 document or URL sources per workspace.
+- File Size Limit: Maximum 25 megabytes (MB) per file upload.
+- Chat Quota: 1,000 conversational RAG queries per month.
+- Support: Community discord and standard email support (48-hour SLA).
+
+Pro Tier:
+- Workspaces: Maximum 20 workspaces per account.
+- Sources: Maximum 1,000 sources per workspace.
+- File Size Limit: Maximum 100 megabytes (MB) per file upload.
+- Chat Quota: 50,000 conversational queries per month.
+- Support: Priority email and ticketing support (4-hour SLA).
+
+Enterprise Tier:
+- Workspaces: Unlimited workspaces with dedicated organization controls.
+- Sources: Unlimited sources with dedicated Qdrant collections.
+- File Size Limit: Up to 500 megabytes (MB) per file upload.
+- Chat Quota: Custom high-throughput allocation.
+- Support: Dedicated account architect and 99.99% uptime SLA.
+
+
+3. FREQUENTLY ASKED QUESTIONS (FAQ)
+
+Q: How do I cancel an ingestion job that is currently processing?
+A: Open the Knowledge view in your workspace, locate the source in either "pending" or "processing" state, and click the red Cancel button (Ban icon). The backend will flag the source as "cancelled" and notify the worker process to abort parsing and vectorization immediately.
+
+Q: Can I delete completed documents from my workspace?
+A: Yes. For any source in "completed", "failed", or "cancelled" status, click the Delete button (Trash icon). IntelligenceOS will remove the vector embeddings from Qdrant, delete the raw binary from storage, and delete the database record.
+
+Q: Why are citations formatted as [source_id:chunk_idx]?
+A: Citations explicitly tie every claim made by the assistant back to the source document and specific 500-token chunk snippet stored in Qdrant. Clicking or hovering over citations displays the underlying context snippet.
+
+Q: How do I toggle between Dark Mode and Light Mode?
+A: In the sidebar or top navbar, click your profile avatar to navigate to Settings. Use the Theme toggle to switch between Dark and Light mode. Your preference is persisted in browser local storage.
+================================================================================

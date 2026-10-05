@@ -19,7 +19,7 @@ export interface Workspace {
 }
 
 export type SourceType = 'file' | 'url' | 'structured' | 'image';
-export type SourceStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type SourceStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
 
 export interface DocumentChunk {
   id: string;
@@ -44,6 +44,7 @@ export interface Source {
   id: string;
   workspace_id: string;
   title: string;
+  name?: string;
   source_type: SourceType;
   mime_type?: string | null;
   status: SourceStatus;

@@ -73,6 +73,18 @@ class EvaluationRepository:
             metrics_diff=metrics_diff,
         )
 
+    def delete_dataset(self, dataset_id: str) -> bool:
+        if dataset_id in self._datasets:
+            del self._datasets[dataset_id]
+            return True
+        return False
+
+    def delete_run(self, run_id: str) -> bool:
+        if run_id in self._runs:
+            del self._runs[run_id]
+            return True
+        return False
+
     def clear(self) -> None:
         self._datasets.clear()
         self._runs.clear()

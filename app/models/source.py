@@ -26,6 +26,7 @@ class SourceType(StrEnum):
     WEBSITE = "website"
     CSV = "csv"
     IMAGE = "image"
+    TEXT = "text"
 
 
 class ProcessingStatus(StrEnum):
@@ -35,6 +36,7 @@ class ProcessingStatus(StrEnum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class Source(Base, TimestampMixin):

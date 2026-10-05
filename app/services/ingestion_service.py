@@ -43,7 +43,9 @@ ALLOWED_MIME_TYPES = {
     "application/pdf": SourceType.PDF,
     "text/csv": SourceType.CSV,
     "application/vnd.ms-excel": SourceType.CSV,
-    "text/plain": SourceType.CSV,  # Plain text csv uploads
+    "text/plain": SourceType.TEXT,
+    "text/markdown": SourceType.TEXT,
+    "text/x-markdown": SourceType.TEXT,
     "image/png": SourceType.IMAGE,
     "image/jpeg": SourceType.IMAGE,
     "image/jpg": SourceType.IMAGE,
@@ -55,6 +57,9 @@ ALLOWED_MIME_TYPES = {
 ALLOWED_EXTENSIONS = {
     ".pdf": SourceType.PDF,
     ".csv": SourceType.CSV,
+    ".txt": SourceType.TEXT,
+    ".md": SourceType.TEXT,
+    ".markdown": SourceType.TEXT,
     ".png": SourceType.IMAGE,
     ".jpg": SourceType.IMAGE,
     ".jpeg": SourceType.IMAGE,
@@ -93,7 +98,7 @@ class IngestionService:
                 return stype
 
         raise BadRequestError(
-            f"Unsupported format '{filename}'. Allowed formats: PDF, CSV, PNG, JPEG, WEBP, TIFF."
+            f"Unsupported format '{filename}'. Allowed formats: PDF, CSV, TXT, MD, PNG, JPEG, WEBP, TIFF."
         )
 
     @staticmethod
@@ -103,6 +108,7 @@ class IngestionService:
         filename: str,
         content: bytes,
         content_type: str | None = None,
+        title: str | None = None,
         storage: StorageBackend | None = None,
         queue: JobQueue | None = None,
         settings: Settings | None = None,
@@ -128,6 +134,7 @@ class IngestionService:
 
         source_type = IngestionService.detect_source_type(filename, content_type)
         safe_name = sanitize_filename(filename)
+        display_name = title.strip() if title and title.strip() else safe_name
         source_id = uuid.uuid4()
         doc_id = uuid.uuid4()
         version_id = uuid.uuid4()
@@ -149,12 +156,13 @@ class IngestionService:
             id=source_id,
             workspace_id=workspace_id,
             source_type=source_type.value,
-            name=safe_name,
+            name=display_name,
             status=ProcessingStatus.PENDING.value,
             metadata_={
                 "original_filename": filename,
                 "file_size": len(content),
                 "content_type": effective_mime,
+                "title": display_name,
             },
         )
         session.add(source)
@@ -164,7 +172,7 @@ class IngestionService:
             source_id=source_id,
             workspace_id=workspace_id,
             metadata_={
-                "title": safe_name,
+                "title": display_name,
                 "file_size": len(content),
             },
         )
@@ -201,6 +209,7 @@ class IngestionService:
         workspace_id: uuid.UUID,
         url: str,
         name: str | None = None,
+        title: str | None = None,
         queue: JobQueue | None = None,
         settings: Settings | None = None,
     ) -> Source:
@@ -216,7 +225,8 @@ class IngestionService:
         source_id = uuid.uuid4()
         doc_id = uuid.uuid4()
         version_id = uuid.uuid4()
-        source_name = name.strip() if name and name.strip() else url
+        raw_name = title if (title and title.strip()) else name
+        source_name = raw_name.strip() if raw_name and raw_name.strip() else url
 
         source = Source(
             id=source_id,
@@ -224,7 +234,7 @@ class IngestionService:
             source_type=SourceType.WEBSITE.value,
             name=source_name,
             status=ProcessingStatus.PENDING.value,
-            metadata_={"url": url},
+            metadata_={"url": url, "title": source_name},
         )
         session.add(source)
 
@@ -301,6 +311,10 @@ class IngestionService:
 
         if not source:
             logger.error(f"Source '{source_id}' not found in workspace '{workspace_id}'.")
+            return
+
+        if source.status == ProcessingStatus.CANCELLED.value:
+            logger.info(f"Source '{source_id}' was cancelled before ingestion started. Aborting.")
             return
 
         # Locate latest document and version
@@ -485,6 +499,77 @@ class IngestionService:
             },
         )
         return source
+
+    @staticmethod
+    async def cancel_source(
+        session: AsyncSession,
+        source_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+    ) -> Source:
+        """Cancels an active or pending source ingestion."""
+        from datetime import UTC, datetime
+
+        source = await IngestionService.get_source(session, source_id, workspace_id)
+        if not source:
+            raise NotFoundError("Source not found in workspace.")
+
+        if source.status in (ProcessingStatus.PENDING.value, ProcessingStatus.PROCESSING.value):
+            source.status = ProcessingStatus.CANCELLED.value
+            source.metadata_ = dict(
+                source.metadata_,
+                cancelled=True,
+                cancelled_at=datetime.now(UTC).isoformat(),
+            )
+            await session.commit()
+            await session.refresh(source)
+            logger.info(f"Cancelled ingestion for source {source_id}")
+        return source
+
+    @staticmethod
+    async def delete_source(
+        session: AsyncSession,
+        source_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+        storage: StorageBackend | None = None,
+        vector_store: VectorStore | None = None,
+        settings: Settings | None = None,
+    ) -> bool:
+        """Deletes a source, purging its object storage files, Qdrant vectors, and database records."""
+        cfg = settings or get_settings()
+        storage_backend = storage or get_storage_backend(cfg)
+        vstore = vector_store or get_vector_store(cfg)
+
+        stmt = (
+            select(Source)
+            .where(Source.id == source_id, Source.workspace_id == workspace_id)
+            .options(selectinload(Source.documents).selectinload(Document.versions))
+        )
+        res = await session.execute(stmt)
+        source = res.scalar_one_or_none()
+        if not source:
+            return False
+
+        # 1. Clean up vectors from Qdrant
+        try:
+            await vstore.ensure_collection()
+            await vstore.delete_by_source(workspace_id, source_id)
+        except Exception as e:
+            logger.warning(f"Could not purge vectors for source {source_id}: {e}")
+
+        # 2. Clean up files from object storage
+        for doc in source.documents:
+            for ver in doc.versions:
+                if ver.storage_key:
+                    try:
+                        await storage_backend.delete_file(ver.storage_key)
+                    except Exception as e:
+                        logger.warning(f"Could not delete storage file {ver.storage_key}: {e}")
+
+        # 3. Delete from DB (cascades to documents, versions, chunks)
+        await session.delete(source)
+        await session.commit()
+        logger.info(f"Permanently deleted source {source_id} from workspace {workspace_id}")
+        return True
 
     @staticmethod
     async def get_source(

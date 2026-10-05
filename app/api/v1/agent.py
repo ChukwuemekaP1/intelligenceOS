@@ -113,3 +113,26 @@ async def list_available_tools(
     """Returns tool descriptors and schemas available for this workspace."""
     registry = create_default_registry()
     return registry.get_descriptors()
+
+
+@router.delete(
+    "/executions/{execution_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete an agent execution trace",
+)
+async def delete_agent_execution(
+    workspace_id: Annotated[uuid.UUID, Path(..., description="Target workspace ID")],
+    execution_id: Annotated[uuid.UUID, Path(..., description="Target agent execution ID")],
+    membership: Membership = Depends(get_workspace_membership),
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> None:
+    """Deletes an agent execution record and its trace history."""
+    deleted = await AgentService.delete_execution(
+        session=session,
+        workspace_id=workspace_id,
+        execution_id=execution_id,
+        user=current_user,
+    )
+    if not deleted:
+        raise NotFoundError("Agent execution record not found in this workspace.")

@@ -1,0 +1,60 @@
+================================================================================
+INTELLIGENCEOS ENGINEERING OPERATIONS RUNBOOK & SRE PLAYBOOK
+Revision: OPS-2026.10
+Target Services: FastAPI Web API, app.worker, Redis, Qdrant Cloud, PostgreSQL
+================================================================================
+
+1. SYSTEM TOPOLOGY & SERVICE ARCHITECTURE
+
+The IntelligenceOS production infrastructure comprises five primary services:
+1. `fastapi-api`: Asynchronous FastAPI cluster handling HTTP/REST client traffic, session management, and SSE event streaming.
+2. `intelligenceos-worker`: Background worker cluster executing `python -m app.worker`. Drains asynchronous ingestion tasks from the Redis queue.
+3. `redis-broker`: Hosted Redis cluster acting as the task queue message broker (queue: "default") and distributed sliding-window rate limiter.
+4. `qdrant-cluster`: Hosted Qdrant Cloud vector database containing the "intelligenceos_sources" collection with 768/1536-dimensional dense vectors.
+5. `postgres-db`: Managed PostgreSQL 16 database storing relational entities, user credentials, workspaces, source metadata, and conversation traces.
+
+
+2. CRITICAL INCIDENT RESPONSE PROCEDURES
+
+INCIDENT SEV-1: REDIS BROKER DOWN OR UNREACHABLE
+Symptoms:
+- Users uploading files or submitting URLs receive 200/201 responses or 500 error logs.
+- Document sources remain indefinitely stuck in "pending" status and never advance to "processing".
+- Redis connection timeout exceptions in FastAPI logs: `redis.exceptions.ConnectionError`.
+Standard Operating Procedure (SOP):
+Step 1: Check Redis connectivity using `redis-cli ping` or the cloud console health check.
+Step 2: If Redis has restarted or failed over, verify the connection URL in environment variable REDIS_URL.
+Step 3: Once Redis is healthy, run the source reconciliation script:
+        `python scripts/reconcile_sources.py --status pending --dry-run=false`
+        This queries PostgreSQL for pending sources created in the last 2 hours and re-enqueues their source IDs into the Redis queue.
+
+INCIDENT SEV-2: QDRANT VECTOR STORE OUTAGE OR CAPACITY BREACH
+Symptoms:
+- Ingestion jobs fail during embedding upsert with `qdrant_client.http.exceptions.UnexpectedResponse`.
+- Chat queries fail with "Failed to query vector store" 500 error.
+Standard Operating Procedure (SOP):
+Step 1: Check Qdrant Cloud cluster disk and memory utilization metrics.
+Step 2: If Qdrant is in read-only mode due to disk limits, upscale cluster storage through the cloud portal.
+Step 3: For failed ingestion sources, users can trigger source retry from the UI, or operators can run:
+        `python scripts/reingest_failed_sources.py --workspace-id <workspace_id>`
+
+INCIDENT SEV-3: WORKER OUT-OF-MEMORY (OOM) ON LARGE DOCUMENTS
+Symptoms:
+- Kubernetes worker pod restarts with Exit Code 137 (OOMKilled) when processing large PDF documents (>150MB or >1000 pages).
+Standard Operating Procedure (SOP):
+Step 1: Inspect memory allocation for the `intelligenceos-worker` deployment. Ensure memory request is >= 2Gi and limit is >= 4Gi.
+Step 2: Worker processes PDF files using PyPDF with streaming page iteration to minimize memory footprint. Ensure streaming mode is enabled.
+Step 3: Horizontal autoscaling rule (HPA) must scale workers based on Redis queue length:
+        `kubectl get hpa intelligenceos-worker-hpa`
+
+
+3. DATABASE MIGRATIONS & SCHEMA UPDATES
+
+To apply database schema upgrades:
+1. Ensure connection to PostgreSQL is authenticated.
+2. Execute Alembic migration:
+   `alembic upgrade head`
+3. Verify migration revision:
+   `alembic current`
+Always test migrations against staging before executing against production databases.
+================================================================================

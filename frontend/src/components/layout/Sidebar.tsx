@@ -8,9 +8,10 @@ import {
   FlaskConical,
   Activity,
   Layers,
+  Settings,
 } from 'lucide-react';
 
-export type NavTab = 'dashboard' | 'knowledge' | 'chat' | 'agent' | 'evaluation' | 'traces';
+export type NavTab = 'dashboard' | 'knowledge' | 'chat' | 'agent' | 'evaluation' | 'traces' | 'settings';
 
 export const Sidebar: React.FC = () => {
   const navItems = [
@@ -20,6 +21,7 @@ export const Sidebar: React.FC = () => {
     { to: '/agent', label: 'Agent Studio', icon: Bot, badge: 'Tools' },
     { to: '/evaluation', label: 'Evaluation Lab', icon: FlaskConical },
     { to: '/traces', label: 'Observability', icon: Activity },
+    { to: '/settings', label: 'Settings', icon: Settings },
   ];
 
   return (

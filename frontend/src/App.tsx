@@ -20,6 +20,7 @@ import { RAGChatView } from './components/chat/RAGChatView';
 import { AgentStudioView } from './components/agent/AgentStudioView';
 import { EvaluationView } from './components/evaluation/EvaluationView';
 import { TracesView } from './components/traces/TracesView';
+import { SettingsView } from './components/settings/SettingsView';
 import { Loader2 } from 'lucide-react';
 
 /**
@@ -116,6 +117,14 @@ export const AppRoutes: React.FC = () => {
           </PublicRoute>
         }
       />
+      <Route
+        path="/signup"
+        element={
+          <PublicRoute>
+            <AuthModal initialMode="register" />
+          </PublicRoute>
+        }
+      />
 
       {/* Protected SaaS Layout */}
       <Route element={<ProtectedRouteLayout />}>
@@ -125,6 +134,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="/agent" element={<AgentStudioView />} />
         <Route path="/evaluation" element={<EvaluationView />} />
         <Route path="/traces" element={<TracesView />} />
+        <Route path="/settings" element={<SettingsView />} />
       </Route>
 
       {/* Default / Fallback Routes */}

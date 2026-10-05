@@ -10,6 +10,7 @@ import {
   TrendingUp,
   TrendingDown,
   Sparkles,
+  Trash2,
 } from 'lucide-react';
 
 export const EvaluationView: React.FC = () => {
@@ -94,6 +95,18 @@ export const EvaluationView: React.FC = () => {
       setMessage({ text: `Comparison failed: ${err.message}`, type: 'error' });
     } finally {
       setIsComparing(false);
+    }
+  };
+
+  const handleDeleteRun = async (runId: string) => {
+    if (!currentWorkspace) return;
+    if (!confirm('Are you sure you want to delete this evaluation run?')) return;
+    try {
+      await api.deleteEvaluationRun(currentWorkspace.id, runId);
+      setRuns((prev) => prev.filter((r) => r.run_id !== runId));
+      setMessage({ text: 'Evaluation run deleted.', type: 'success' });
+    } catch (err: any) {
+      setMessage({ text: `Failed to delete run: ${err.message}`, type: 'error' });
     }
   };
 
@@ -322,6 +335,7 @@ export const EvaluationView: React.FC = () => {
                   <th className="px-6 py-3.5">Citation F1</th>
                   <th className="px-6 py-3.5">Latency</th>
                   <th className="px-6 py-3.5">Timestamp</th>
+                  <th className="px-6 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800/60 text-xs">
@@ -354,6 +368,16 @@ export const EvaluationView: React.FC = () => {
 
                     <td className="px-6 py-4 text-slate-500">
                       {new Date(r.timestamp).toLocaleString()}
+                    </td>
+
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        onClick={() => handleDeleteRun(r.run_id)}
+                        title="Delete Evaluation Run"
+                        className="p-1.5 text-slate-400 hover:text-rose-600 dark:text-slate-500 dark:hover:text-rose-400 bg-slate-100 hover:bg-rose-50 dark:bg-slate-950 dark:hover:bg-rose-950/40 rounded-lg border border-slate-200 dark:border-slate-800 hover:border-rose-200 dark:hover:border-rose-900 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </td>
                   </tr>
                 ))}

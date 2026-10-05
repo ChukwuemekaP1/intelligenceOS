@@ -13,6 +13,7 @@ import {
   Code,
   ShieldCheck,
   RotateCw,
+  Trash2,
 } from 'lucide-react';
 
 export const AgentStudioView: React.FC = () => {
@@ -82,6 +83,21 @@ export const AgentStudioView: React.FC = () => {
       }
     } catch (err) {
       console.warn('Could not load detailed trace for agent run:', err);
+    }
+  };
+
+  const handleDeleteRun = async (executionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!currentWorkspace) return;
+    if (!confirm('Are you sure you want to delete this agent execution log?')) return;
+    try {
+      await api.deleteAgentExecution(currentWorkspace.id, executionId);
+      setHistory((prev) => prev.filter((r) => r.execution_id !== executionId));
+      if (currentExecution?.execution_id === executionId) {
+        setCurrentExecution(null);
+      }
+    } catch (err: any) {
+      setError(`Failed to delete execution: ${err.message}`);
     }
   };
 
@@ -254,16 +270,26 @@ export const AgentStudioView: React.FC = () => {
                   <div
                     key={run.execution_id}
                     onClick={() => handleSelectRun(run)}
-                    className={`p-2 rounded-xl text-xs cursor-pointer flex items-center justify-between transition-colors ${
+                    className={`group p-2 rounded-xl text-xs cursor-pointer flex items-center justify-between transition-colors ${
                       currentExecution?.execution_id === run.execution_id
                         ? 'bg-purple-50 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-800/60 text-purple-900 dark:text-purple-200 font-medium'
                         : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900'
                     }`}
                   >
-                    <div className="truncate max-w-[190px]">
+                    <div className="truncate max-w-[170px]">
                       {displayTitle}
                     </div>
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500">{stepsCount} steps</span>
+                    <div className="flex items-center space-x-1.5 flex-shrink-0">
+                      <span className="text-[10px] text-slate-400 dark:text-slate-500">{stepsCount} steps</span>
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteRun(run.execution_id, e)}
+                        title="Delete Execution"
+                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded transition-opacity"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
                 );
               })

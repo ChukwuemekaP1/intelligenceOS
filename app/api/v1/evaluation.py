@@ -71,6 +71,25 @@ async def get_dataset(
     return ds
 
 
+@router.delete(
+    "/evaluations/datasets/{dataset_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete an evaluation dataset",
+)
+async def delete_dataset(
+    workspace_id: Annotated[uuid.UUID, Path(...)],
+    dataset_id: Annotated[str, Path(...)],
+    membership: Membership = Depends(get_workspace_membership),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """Deletes an evaluation dataset from the workspace."""
+    repo = get_evaluation_repository()
+    ds = repo.get_dataset(dataset_id)
+    if not ds or ds.workspace_id != str(workspace_id):
+        raise NotFoundError("Evaluation dataset not found in this workspace.")
+    repo.delete_dataset(dataset_id)
+
+
 # --- RUNS & BENCHMARKS ---
 
 
@@ -141,6 +160,25 @@ async def get_evaluation_run(
     if not run or run.workspace_id != str(workspace_id):
         raise NotFoundError("Evaluation run not found in this workspace.")
     return run
+
+
+@router.delete(
+    "/evaluations/runs/{run_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete an evaluation run",
+)
+async def delete_evaluation_run(
+    workspace_id: Annotated[uuid.UUID, Path(...)],
+    run_id: Annotated[str, Path(...)],
+    membership: Membership = Depends(get_workspace_membership),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """Deletes an evaluation run from the workspace."""
+    repo = get_evaluation_repository()
+    run = repo.get_run(run_id)
+    if not run or run.workspace_id != str(workspace_id):
+        raise NotFoundError("Evaluation run not found in this workspace.")
+    repo.delete_run(run_id)
 
 
 @router.get("/evaluations/compare", response_model=ExperimentComparison)

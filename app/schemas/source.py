@@ -17,10 +17,16 @@ class UrlSourceCreate(BaseModel):
         description="Public HTTP or HTTPS website URL to fetch and ingest.",
         examples=["https://example.com/docs"],
     )
-    name: str | None = Field(
+    title: str | None = Field(
         default=None,
         max_length=255,
         description="Optional human-readable label or title for the source.",
+        examples=["Example Documentation"],
+    )
+    name: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Optional alias for title.",
         examples=["Example Documentation"],
     )
 
@@ -28,16 +34,25 @@ class UrlSourceCreate(BaseModel):
 class SourceResponse(BaseModel):
     """API response model representing a knowledge source."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     id: uuid.UUID
     workspace_id: uuid.UUID
     source_type: str
     name: str
+    title: str = Field(default="")
     status: str
     metadata: dict[str, Any] = Field(alias="metadata_")
     created_at: datetime
     updated_at: datetime
+
+    @classmethod
+    def model_validate(cls, obj: Any, *args, **kwargs) -> "SourceResponse":
+        # Ensure title defaults to name if not explicitly set
+        instance = super().model_validate(obj, *args, **kwargs)
+        if not instance.title and instance.name:
+            instance.title = instance.name
+        return instance
 
 
 class DocumentVersionResponse(BaseModel):

@@ -106,16 +106,22 @@ def create_application() -> FastAPI:
     # Optional static frontend mount if built
     import os
 
+    from starlette.exceptions import HTTPException as StarletteHTTPException
     from starlette.staticfiles import StaticFiles
 
     frontend_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
     if os.path.exists(frontend_dist):
         class SPAStaticFiles(StaticFiles):
             async def get_response(self, path: str, scope):
-                response = await super().get_response(path, scope)
-                if response.status_code == 404:
-                    return await super().get_response("index.html", scope)
-                return response
+                try:
+                    response = await super().get_response(path, scope)
+                    if response.status_code == 404:
+                        return await super().get_response("index.html", scope)
+                    return response
+                except StarletteHTTPException as exc:
+                    if exc.status_code == 404:
+                        return await super().get_response("index.html", scope)
+                    raise exc
 
         app.mount("/", SPAStaticFiles(directory=frontend_dist, html=True), name="frontend")
 

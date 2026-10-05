@@ -13,6 +13,20 @@ import {
 
 const BASE_URL = import.meta.env.VITE_API_URL || '';
 
+export class ApiError extends Error {
+  status: number;
+  statusText: string;
+  fieldErrors?: Record<string, string>;
+
+  constructor(status: number, statusText: string, message: string, fieldErrors?: Record<string, string>) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.statusText = statusText;
+    this.fieldErrors = fieldErrors;
+  }
+}
+
 class ApiClient {
   private token: string | null = null;
 
@@ -60,17 +74,70 @@ class ApiClient {
 
     if (!response.ok) {
       let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      let fieldErrors: Record<string, string> | undefined;
+
       try {
         const errorData = await response.json();
         if (errorData.detail) {
-          errorMessage = typeof errorData.detail === 'string'
-            ? errorData.detail
-            : JSON.stringify(errorData.detail);
+          if (typeof errorData.detail === 'string') {
+            errorMessage = errorData.detail;
+          } else if (Array.isArray(errorData.detail)) {
+            // Pydantic validation errors list: [{ loc: ['body', 'title'], msg: '...', type: '...' }]
+            fieldErrors = {};
+            const messages = errorData.detail.map((err: any) => {
+              const field = Array.isArray(err.loc)
+                ? err.loc.filter((l: any) => l !== 'body').join('.')
+                : (err.loc || '');
+              const msg = err.msg || 'Invalid value';
+              if (field) fieldErrors![field] = msg;
+              return field ? `${field}: ${msg}` : msg;
+            });
+            errorMessage = messages.join('; ');
+          } else {
+            errorMessage = JSON.stringify(errorData.detail);
+          }
         }
       } catch {
-        // use fallback message
+        // Fallback friendly status messages
+        switch (response.status) {
+          case 400:
+            errorMessage = 'Bad request. Please verify your inputs.';
+            break;
+          case 401:
+            errorMessage = 'Authentication required or session expired.';
+            break;
+          case 403:
+            errorMessage = 'Access denied. You do not have permission for this workspace resource.';
+            break;
+          case 404:
+            errorMessage = 'Requested resource not found.';
+            break;
+          case 405:
+            errorMessage = 'Method not allowed for this endpoint.';
+            break;
+          case 409:
+            errorMessage = 'Conflict with existing resource state.';
+            break;
+          case 422:
+            errorMessage = 'Validation error. Please verify input fields.';
+            break;
+          case 429:
+            errorMessage = 'Rate limit exceeded. Please wait and try again.';
+            break;
+          case 500:
+            errorMessage = 'Internal server error. Please try again later.';
+            break;
+          case 502:
+            errorMessage = 'Bad Gateway. Backend service unreachable.';
+            break;
+          case 503:
+            errorMessage = 'Service temporarily unavailable.';
+            break;
+          default:
+            errorMessage = `Request failed (HTTP ${response.status}: ${response.statusText})`;
+        }
       }
-      throw new Error(errorMessage);
+      throw new ApiError(response.status, response.statusText, errorMessage, fieldErrors);
     }
 
     if (response.status === 204) {
@@ -146,6 +213,12 @@ class ApiClient {
 
   async retryIngestion(workspaceId: string, sourceId: string): Promise<Source> {
     return this.request<Source>(`/api/v1/workspaces/${workspaceId}/sources/${sourceId}/retry`, {
+      method: 'POST',
+    });
+  }
+
+  async cancelSource(workspaceId: string, sourceId: string): Promise<Source> {
+    return this.request<Source>(`/api/v1/workspaces/${workspaceId}/sources/${sourceId}/cancel`, {
       method: 'POST',
     });
   }
@@ -239,6 +312,12 @@ class ApiClient {
     return this.request<AgentExecution>(`/api/v1/workspaces/${workspaceId}/agent/executions/${executionId}`);
   }
 
+  async deleteAgentExecution(workspaceId: string, executionId: string): Promise<void> {
+    return this.request<void>(`/api/v1/workspaces/${workspaceId}/agent/executions/${executionId}`, {
+      method: 'DELETE',
+    });
+  }
+
   // ==================== EVALUATION ====================
   async listEvaluationDatasets(workspaceId: string): Promise<EvaluationDataset[]> {
     return this.request<EvaluationDataset[]>(`/api/v1/workspaces/${workspaceId}/evaluations/datasets`);
@@ -252,6 +331,12 @@ class ApiClient {
     return this.request<EvaluationDataset>(`/api/v1/workspaces/${workspaceId}/evaluations/datasets`, {
       method: 'POST',
       body: JSON.stringify({ name, examples }),
+    });
+  }
+
+  async deleteEvaluationDataset(workspaceId: string, datasetId: string): Promise<void> {
+    return this.request<void>(`/api/v1/workspaces/${workspaceId}/evaluations/datasets/${datasetId}`, {
+      method: 'DELETE',
     });
   }
 
@@ -277,6 +362,12 @@ class ApiClient {
 
   async listEvaluationRuns(workspaceId: string): Promise<EvaluationRun[]> {
     return this.request<EvaluationRun[]>(`/api/v1/workspaces/${workspaceId}/evaluations/runs`);
+  }
+
+  async deleteEvaluationRun(workspaceId: string, runId: string): Promise<void> {
+    return this.request<void>(`/api/v1/workspaces/${workspaceId}/evaluations/runs/${runId}`, {
+      method: 'DELETE',
+    });
   }
 
   async compareExperiments(

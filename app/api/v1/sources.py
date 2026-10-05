@@ -8,7 +8,7 @@ status polling, chunk inspection, and retry capabilities.
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Path, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Path, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -42,6 +42,7 @@ async def upload_file_source(
     file: UploadFile = File(
         ..., description="Binary file to ingest (PDF, CSV, PNG, JPG, WEBP, TIFF)"
     ),
+    title: Annotated[str | None, Form(description="Optional custom title for the source")] = None,
     current_user: User = Depends(get_current_user),
     membership: Membership = Depends(
         require_workspace_role(WorkspaceRole.OWNER, WorkspaceRole.ADMIN, WorkspaceRole.MEMBER)
@@ -58,6 +59,7 @@ async def upload_file_source(
         filename=filename,
         content=content,
         content_type=file.content_type,
+        title=title,
     )
     return SourceResponse.model_validate(source)
 
@@ -83,6 +85,7 @@ async def submit_url_source(
         workspace_id=workspace_id,
         url=str(request.url),
         name=request.name,
+        title=request.title,
     )
     return SourceResponse.model_validate(source)
 
@@ -186,4 +189,42 @@ async def retry_source_ingestion(
 ) -> SourceResponse:
     """Re-enqueues a source for background ingestion (restricted to OWNER and ADMIN)."""
     source = await IngestionService.retry_ingestion(session, source_id, workspace_id)
+    return SourceResponse.model_validate(source)
+
+
+@router.delete(
+    "/{source_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a knowledge source and purge its embeddings",
+)
+async def delete_source(
+    workspace_id: Annotated[uuid.UUID, Path(...)],
+    source_id: Annotated[uuid.UUID, Path(...)],
+    membership: Membership = Depends(
+        require_workspace_role(WorkspaceRole.OWNER, WorkspaceRole.ADMIN)
+    ),
+    session: AsyncSession = Depends(get_db),
+) -> None:
+    """Permanently purges a knowledge source, its files, and vector embeddings."""
+    success = await IngestionService.delete_source(session, source_id, workspace_id)
+    if not success:
+        raise NotFoundError("Source not found in workspace.")
+
+
+@router.post(
+    "/{source_id}/cancel",
+    response_model=SourceResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Cancel active or queued ingestion pipeline",
+)
+async def cancel_source_ingestion(
+    workspace_id: Annotated[uuid.UUID, Path(...)],
+    source_id: Annotated[uuid.UUID, Path(...)],
+    membership: Membership = Depends(
+        require_workspace_role(WorkspaceRole.OWNER, WorkspaceRole.ADMIN, WorkspaceRole.MEMBER)
+    ),
+    session: AsyncSession = Depends(get_db),
+) -> SourceResponse:
+    """Cancels a pending or processing ingestion pipeline."""
+    source = await IngestionService.cancel_source(session, source_id, workspace_id)
     return SourceResponse.model_validate(source)

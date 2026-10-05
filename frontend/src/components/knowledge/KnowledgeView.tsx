@@ -14,6 +14,7 @@ import {
   Eye,
   X,
   Database,
+  Ban,
 } from 'lucide-react';
 
 export const KnowledgeView: React.FC = () => {
@@ -103,12 +104,25 @@ export const KnowledgeView: React.FC = () => {
     }
   };
 
+  const handleCancel = async (sourceId: string) => {
+    if (!currentWorkspace) return;
+    if (!confirm('Are you sure you want to cancel this in-progress ingestion?')) return;
+    try {
+      await api.cancelSource(currentWorkspace.id, sourceId);
+      setMessage({ text: 'Ingestion cancelled.', type: 'success' });
+      await fetchSources();
+    } catch (err: any) {
+      setMessage({ text: `Cancel failed: ${err.message}`, type: 'error' });
+    }
+  };
+
   const handleDelete = async (sourceId: string) => {
     if (!currentWorkspace) return;
     if (!confirm('Are you sure you want to delete this source and purge its embeddings?')) return;
     try {
       await api.deleteSource(currentWorkspace.id, sourceId);
       setMessage({ text: 'Source deleted successfully.', type: 'success' });
+      setSources((prev) => prev.filter((s) => s.id !== sourceId));
       await fetchSources();
     } catch (err: any) {
       setMessage({ text: `Delete failed: ${err.message}`, type: 'error' });
@@ -325,7 +339,7 @@ export const KnowledgeView: React.FC = () => {
                     <td className="px-6 py-4">
                       <div className="font-medium text-slate-900 dark:text-white flex items-center space-x-2">
                         <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
-                        <span className="truncate max-w-xs">{s.title}</span>
+                        <span className="truncate max-w-xs">{s.title || s.name || 'Untitled Source'}</span>
                       </div>
                       {s.error_message && (
                         <div className="text-xs text-rose-600 dark:text-rose-400 mt-1 flex items-center space-x-1">
@@ -360,6 +374,12 @@ export const KnowledgeView: React.FC = () => {
                           <span>Failed</span>
                         </span>
                       )}
+                      {s.status === 'cancelled' && (
+                        <span className="inline-flex items-center space-x-1.5 text-xs text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-full">
+                          <Ban className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Cancelled</span>
+                        </span>
+                      )}
                     </td>
 
                     <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-300">
@@ -386,7 +406,17 @@ export const KnowledgeView: React.FC = () => {
                         <Eye className="w-3.5 h-3.5" />
                       </button>
 
-                      {s.status === 'failed' && (
+                      {(s.status === 'pending' || s.status === 'processing') && (
+                        <button
+                          onClick={() => handleCancel(s.id)}
+                          title="Cancel Ingestion"
+                          className="p-1.5 text-amber-600 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 rounded-lg border border-amber-200 dark:border-amber-800/60 transition-colors"
+                        >
+                          <Ban className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
+                      {(s.status === 'failed' || s.status === 'cancelled') && (
                         <button
                           onClick={() => handleRetry(s.id)}
                           title="Retry Ingestion Pipeline"

@@ -251,3 +251,30 @@ class AgentService:
             error=record.error,
             created_at=record.created_at,
         )
+
+    @staticmethod
+    async def delete_execution(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        execution_id: uuid.UUID,
+        user: User,
+    ) -> bool:
+        """Deletes an agent execution record, enforcing workspace isolation."""
+        membership = await WorkspaceService.get_membership(
+            session, user_id=user.id, workspace_id=workspace_id
+        )
+        if membership is None:
+            raise ForbiddenError("You are not a member of this workspace.")
+
+        stmt = select(AgentExecution).where(
+            AgentExecution.id == execution_id,
+            AgentExecution.workspace_id == workspace_id,
+        )
+        result = await session.execute(stmt)
+        record = result.scalar_one_or_none()
+        if not record:
+            return False
+
+        await session.delete(record)
+        await session.commit()
+        return True

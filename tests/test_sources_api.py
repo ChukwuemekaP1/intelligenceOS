@@ -202,3 +202,53 @@ async def test_unauthenticated_sources_access(
     random_ws = uuid.uuid4()
     resp = await client.get(f"/api/v1/workspaces/{random_ws}/sources")
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_submit_url_with_title_and_delete_success(
+    client: AsyncClient,
+    auth_headers: Any,
+) -> None:
+    """Verifies URL source creation with title parameter and subsequent deletion."""
+    headers = await auth_headers("urltester@example.com", "securepassword123")
+    ws_resp = await client.post(
+        "/api/v1/workspaces",
+        json={"name": "URL Test Workspace"},
+        headers=headers,
+    )
+    assert ws_resp.status_code == 201
+    workspace_id = ws_resp.json()["id"]
+
+    # 1. Submit URL with custom title
+    url_resp = await client.post(
+        f"/api/v1/workspaces/{workspace_id}/sources/url",
+        json={"url": "https://example.com/docs", "title": "Official Documentation"},
+        headers=headers,
+    )
+    assert url_resp.status_code == 202, url_resp.text
+    data = url_resp.json()
+    assert data["title"] == "Official Documentation"
+    assert data["name"] == "Official Documentation"
+    source_id = data["id"]
+
+    # 2. Cancel source
+    cancel_resp = await client.post(
+        f"/api/v1/workspaces/{workspace_id}/sources/{source_id}/cancel",
+        headers=headers,
+    )
+    assert cancel_resp.status_code == 200
+    assert cancel_resp.json()["status"] == "cancelled"
+
+    # 3. Delete source
+    del_resp = await client.delete(
+        f"/api/v1/workspaces/{workspace_id}/sources/{source_id}",
+        headers=headers,
+    )
+    assert del_resp.status_code == 204
+
+    # 4. Verify source no longer exists
+    get_resp = await client.get(
+        f"/api/v1/workspaces/{workspace_id}/sources/{source_id}",
+        headers=headers,
+    )
+    assert get_resp.status_code == 404

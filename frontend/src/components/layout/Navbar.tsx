@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { Building2, ChevronDown, Plus, LogOut, User as UserIcon, Sun, Moon, Sparkles } from 'lucide-react';
+import { Building2, ChevronDown, Plus, LogOut, User as UserIcon, Sun, Moon, Sparkles, Settings as SettingsIcon } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
+  const navigate = useNavigate();
   const { user, workspaces, currentWorkspace, setCurrentWorkspace, createWorkspace, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -131,10 +133,21 @@ export const Navbar: React.FC = () => {
 
         {user && (
           <div className="flex items-center space-x-2">
-            <div className="flex items-center space-x-2 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-1.5 rounded-xl text-xs text-slate-700 dark:text-slate-300">
+            <button
+              onClick={() => navigate('/settings')}
+              title="Open Account & Settings"
+              className="flex items-center space-x-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 px-3 py-1.5 rounded-xl text-xs text-slate-700 dark:text-slate-300 transition-colors"
+            >
               <UserIcon className="w-3.5 h-3.5 text-slate-400" />
               <span className="max-w-[130px] truncate font-medium">{user.email}</span>
-            </div>
+            </button>
+            <button
+              onClick={() => navigate('/settings')}
+              title="Settings"
+              className="p-2 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl transition-colors"
+            >
+              <SettingsIcon className="w-4 h-4" />
+            </button>
             <button
               onClick={logout}
               title="Sign Out"
