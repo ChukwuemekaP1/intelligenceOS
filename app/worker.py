@@ -32,7 +32,7 @@ async def process_next_job() -> bool:
     if job is None:
         return False
 
-    logger.info(f"Worker picked up job {job.id} of type '{job.job_type}'")
+    logger.info(f"job received: id={job.id}, type={job.job_type}")
 
     if job.job_type == "ingestion":
         source_id_str = job.payload.get("source_id")
@@ -40,10 +40,12 @@ async def process_next_job() -> bool:
 
         if not source_id_str or not workspace_id_str:
             logger.error(f"Malformed job payload in {job.id}: missing source_id or workspace_id")
+            logger.error(f"job failed: id={job.id}")
             return True
 
         source_id = uuid.UUID(source_id_str)
         workspace_id = uuid.UUID(workspace_id_str)
+        logger.info(f"source ID: {source_id}, workspace ID: {workspace_id}")
 
         async with async_session_factory() as session:
             try:
@@ -52,8 +54,9 @@ async def process_next_job() -> bool:
                     source_id=source_id,
                     workspace_id=workspace_id,
                 )
+                logger.info(f"job completed: id={job.id}, source_id={source_id}")
             except Exception as exc:
-                logger.error(f"Error processing ingestion job {job.id}: {exc}", exc_info=True)
+                logger.error(f"job failed: id={job.id}, error={exc}", exc_info=True)
 
     return True
 

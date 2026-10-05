@@ -5,9 +5,55 @@ from fastapi import APIRouter, Response, status
 
 from app.database.redis import check_redis_health
 from app.database.session import check_database_health
-from app.schemas.health import HealthResponse, ReadinessResponse
+from app.schemas.health import ComprehensiveHealthResponse, HealthResponse, ReadinessResponse
+from app.storage.factory import get_storage_backend
+from app.vectorstore.factory import get_vector_store
 
 router = APIRouter(tags=["Health & Readiness"])
+
+
+async def check_qdrant_health() -> bool:
+    try:
+        vstore = get_vector_store()
+        return await vstore.health_check()
+    except Exception:
+        return False
+
+
+async def check_storage_health() -> bool:
+    try:
+        storage = get_storage_backend()
+        return await storage.health_check()
+    except Exception:
+        return False
+
+
+@router.get(
+    "/health",
+    response_model=ComprehensiveHealthResponse,
+    summary="Production System Health",
+)
+async def health(response: Response) -> ComprehensiveHealthResponse:
+    """Comprehensive readiness probe verifying PostgreSQL, Redis, Qdrant, and Supabase Storage."""
+    db_ok, redis_ok, qdrant_ok, storage_ok = await asyncio.gather(
+        check_database_health(),
+        check_redis_health(),
+        check_qdrant_health(),
+        check_storage_health(),
+    )
+
+    all_ok = db_ok and redis_ok and qdrant_ok and storage_ok
+    if not all_ok:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
+    return ComprehensiveHealthResponse(
+        status="ok" if all_ok else "degraded",
+        database="ok" if db_ok else "unhealthy",
+        redis="ok" if redis_ok else "unhealthy",
+        qdrant="ok" if qdrant_ok else "unhealthy",
+        storage="ok" if storage_ok else "unhealthy",
+        timestamp=datetime.now(UTC),
+    )
 
 
 @router.get("/healthz", response_model=HealthResponse, summary="Liveness Probe")

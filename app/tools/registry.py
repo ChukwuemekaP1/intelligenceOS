@@ -108,9 +108,17 @@ class ToolRegistry:
 
         # 4. Safe tool execution
         try:
-            return await tool.execute(validated_input, context)
+            res = await tool.execute(validated_input, context)
+            if not res.success:
+                from app.observability.metrics import record_agent_tool_failure
+
+                record_agent_tool_failure(tool_name, "tool_execution_error")
+            return res
         except Exception as exc:
             logger.exception(f"Unhandled exception during tool '{tool_name}' execution: {exc}")
+            from app.observability.metrics import record_agent_tool_failure
+
+            record_agent_tool_failure(tool_name, type(exc).__name__)
             # Ensure internal secrets or DB credentials are never leaked
             err_details = f"{type(exc).__name__}: {str(exc)[:200]}"
             return ToolResult(

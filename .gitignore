@@ -44,9 +44,17 @@ htmlcov/
 *.swp
 *.swo
 
-# Docker / Local Database
+# Docker / Local Database & Storage
 postgres_data/
 redis_data/
+qdrant_data/
+minio_data/
+storage_data/
+
+# Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
 
 # OS
 .DS_Store

@@ -43,11 +43,19 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             response.headers["X-Request-ID"] = req_id
 
             # Avoid spamming logs with liveness checks
-            if request.url.path not in ("/healthz", "/health/live"):
+            if request.url.path not in ("/healthz", "/health/live", "/metrics"):
                 logger.info(
                     f"{request.method} {request.url.path} completed "
                     f"with {response.status_code} in {elapsed_ms:.2f}ms"
                 )
+            from app.observability.metrics import record_http_request
+
+            record_http_request(
+                method=request.method,
+                endpoint=request.url.path,
+                status_code=response.status_code,
+                duration_seconds=time.perf_counter() - start_time,
+            )
             return response
         finally:
             request_id_ctx.reset(token)
@@ -70,11 +78,46 @@ def create_application() -> FastAPI:
     # Exception Handlers
     register_exception_handlers(app)
 
+    # CORS Middleware
+    from starlette.middleware.cors import CORSMiddleware
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Prometheus metrics scraper endpoint
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics_endpoint() -> Response:
+        from app.observability.metrics import export_metrics
+
+        content, content_type = export_metrics()
+        return Response(content=content, media_type=content_type)
+
     # Routers
     # Direct liveness/readiness probes at root
     app.include_router(root_health_router)
     # API v1 routes
     app.include_router(api_v1_router, prefix=settings.API_V1_STR)
+
+    # Optional static frontend mount if built
+    import os
+
+    from starlette.staticfiles import StaticFiles
+
+    frontend_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+    if os.path.exists(frontend_dist):
+        class SPAStaticFiles(StaticFiles):
+            async def get_response(self, path: str, scope):
+                response = await super().get_response(path, scope)
+                if response.status_code == 404:
+                    return await super().get_response("index.html", scope)
+                return response
+
+        app.mount("/", SPAStaticFiles(directory=frontend_dist, html=True), name="frontend")
 
     return app
 

@@ -29,18 +29,20 @@ class QdrantVectorStore(VectorStore):
             else None
         )
 
+        timeout_val = getattr(self.settings, "QDRANT_TIMEOUT", 15.0)
+
         if self.settings.QDRANT_URL:
             self._client = AsyncQdrantClient(
                 url=self.settings.QDRANT_URL,
                 api_key=api_key_val,
-                timeout=10.0,
+                timeout=timeout_val,
             )
         else:
             self._client = AsyncQdrantClient(
                 host=self.settings.QDRANT_HOST,
                 port=self.settings.QDRANT_PORT,
                 api_key=api_key_val,
-                timeout=10.0,
+                timeout=timeout_val,
             )
 
     async def ensure_collection(self) -> None:

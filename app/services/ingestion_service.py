@@ -319,6 +319,8 @@ class IngestionService:
         version.status = ProcessingStatus.PROCESSING.value
         await session.commit()
 
+        logger.info(f"source ID: {source_id}, workspace ID: {workspace_id}")
+
         try:
             # 2. Retrieve content
             content_bytes = b""
@@ -333,12 +335,18 @@ class IngestionService:
             if version.storage_key:
                 logger.info(f"Downloading object '{version.storage_key}' from storage...")
                 content_bytes = await storage_backend.download_file(version.storage_key)
+                logger.info(
+                    f"file retrieved: key='{version.storage_key}', bytes={len(content_bytes)}"
+                )
+            else:
+                logger.info(f"file retrieved: (direct url source, bytes={len(content_bytes)})")
 
             # 3. Parse content into canonical NormalizedDocument
             parser = get_parser(source.source_type)
             norm_doc = await parser.parse(content_bytes, metadata=parse_metadata)
             logger.info(
-                f"Parsed source '{source.id}' into {len(norm_doc.elements)} normalized elements."
+                f"text extraction completed: elements={len(norm_doc.elements)}, "
+                f"title='{norm_doc.title}'"
             )
 
             # 4. Chunk document
@@ -353,7 +361,7 @@ class IngestionService:
             if not chunks_data:
                 raise ParserError("Ingestion produced zero text chunks.")
 
-            logger.info(f"Generated {len(chunks_data)} chunks for source '{source.id}'.")
+            logger.info(f"chunk count: {len(chunks_data)} for source '{source.id}'")
 
             # 5. Generate embeddings
             chunk_texts = [c.content for c in chunks_data]
@@ -364,6 +372,7 @@ class IngestionService:
                     f"Vector count mismatch: generated {len(vectors)} embeddings "
                     f"for {len(chunks_data)} chunks."
                 )
+            logger.info(f"embedding completed: generated {len(vectors)} vectors")
 
             # 6. Idempotently update Qdrant (remove previous vectors for this version if re-running)
             await vstore.ensure_collection()
@@ -393,7 +402,7 @@ class IngestionService:
                 )
 
             await vstore.upsert_points(workspace_id, vector_points)
-            logger.info(f"Successfully upserted {len(vector_points)} points to vector store.")
+            logger.info(f"Qdrant upsert completed: count={len(vector_points)}")
 
             # 7. Persist Chunk entities in PostgreSQL
             # Remove any prior DB chunks for this version (guarantees idempotency on retry)
@@ -420,13 +429,16 @@ class IngestionService:
                 title=norm_doc.title,
             )
             await session.commit()
-            logger.info(f"Ingestion COMPLETED for source '{source.id}'.")
+            logger.info(
+                f"database update completed: chunks={len(chunks_data)}, status={source.status}"
+            )
+            logger.info(f"job completed: source_id={source.id}")
 
         except Exception as exc:
             await session.rollback()
             # Sanitize error message to avoid leaking internals
             error_msg = str(exc)[:500]
-            logger.error(f"Ingestion FAILED for source '{source_id}': {error_msg}")
+            logger.error(f"job failed: source_id={source_id}, error={error_msg}")
 
             # Re-fetch entities in a fresh transaction to record failure
             fail_stmt = (
@@ -445,6 +457,9 @@ class IngestionService:
                     fail_ver.status = ProcessingStatus.FAILED.value
                     fail_ver.error_message = error_msg
                 await session.commit()
+                from app.observability.metrics import record_ingestion_failure
+
+                record_ingestion_failure(fail_source.source_type, type(exc).__name__)
 
     @staticmethod
     async def retry_ingestion(

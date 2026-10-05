@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: intelligenceos-config
+  namespace: intelligenceos
+data:
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "INFO"
+  LOG_FORMAT: "json"
+  POSTGRES_SERVER: "postgres.intelligenceos.svc.cluster.local"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "intelligenceos"
+  REDIS_URL: "redis://redis.intelligenceos.svc.cluster.local:6379/0"
+  STORAGE_BACKEND: "s3"
+  S3_ENDPOINT_URL: "http://minio.intelligenceos.svc.cluster.local:9000"
+  S3_BUCKET_NAME: "intelligenceos-sources"
+  S3_REGION: "us-east-1"
+  QDRANT_HOST: "qdrant.intelligenceos.svc.cluster.local"
+  QDRANT_PORT: "6333"
+  QDRANT_COLLECTION: "intelligenceos_chunks"
+  LLM_PROVIDER: "gemini"
+  GEMINI_MODEL: "gemini-3.8-flash"
+  EMBEDDING_PROVIDER: "gemini"
+  GEMINI_EMBEDDING_MODEL: "text-embedding-004"
+  EMBEDDING_DIMENSION: "768"
+  RAG_RETRIEVAL_MODE: "hybrid"
+  RAG_ENABLE_RERANKING: "true"
+  RERANKER_TYPE: "local"
+  AGENT_MAX_STEPS: "6"
+  CORS_ORIGINS: "*"

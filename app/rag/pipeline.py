@@ -114,97 +114,133 @@ class RAGPipeline:
             else self.settings.RAG_RETRIEVAL_MODE
         )
 
-        # 2. Retrieval stage
-        t_ret_start = time.perf_counter()
-        initial_candidates = await self.retrieval_service.retrieve(
-            workspace_id=workspace_id,
-            query=clean_query,
-            top_k=initial_top_k,
-            similarity_threshold=threshold,
-            mode=mode,
+        from app.observability.metrics import (
+            record_llm_latency,
+            record_retrieval_latency,
         )
-        retrieval_latency_ms = (time.perf_counter() - t_ret_start) * 1000
+        from app.observability.repository import get_trace_repository
+        from app.observability.tracer import get_current_trace, start_span, start_trace
 
-        # 3. Reranking stage
-        t_rerank_start = time.perf_counter()
-        active_reranker = self.reranker or get_reranker(
-            settings=self.settings, enabled=enable_rerank
-        )
-        reranked_candidates = await active_reranker.rerank(
-            query=clean_query,
-            candidates=initial_candidates,
-            top_k=final_top_k,
-        )
-        rerank_latency_ms = (time.perf_counter() - t_rerank_start) * 1000
+        async def _execute_steps() -> RAGExecutionResult:
+            # 2. Retrieval stage
+            t_ret_start = time.perf_counter()
+            async with start_span("retrieval", {"mode": mode, "top_k": initial_top_k}):
+                initial_candidates = await self.retrieval_service.retrieve(
+                    workspace_id=workspace_id,
+                    query=clean_query,
+                    top_k=initial_top_k,
+                    similarity_threshold=threshold,
+                    mode=mode,
+                )
+            retrieval_latency_ms = (time.perf_counter() - t_ret_start) * 1000
+            record_retrieval_latency(mode, retrieval_latency_ms / 1000.0)
 
-        # 4. Context construction stage
-        built_context = self.context_builder.build_context(
-            candidates=reranked_candidates,
-            max_context_chars=self.settings.RAG_MAX_CONTEXT_CHARS,
-        )
+            # 3. Reranking stage
+            t_rerank_start = time.perf_counter()
+            active_reranker = self.reranker or get_reranker(
+                settings=self.settings, enabled=enable_rerank
+            )
+            async with start_span(
+                "reranking", {"enabled": enable_rerank, "count": len(initial_candidates)}
+            ):
+                reranked_candidates = await active_reranker.rerank(
+                    query=clean_query,
+                    candidates=initial_candidates,
+                    top_k=final_top_k,
+                )
+            rerank_latency_ms = (time.perf_counter() - t_rerank_start) * 1000
 
-        # 5. LLM Generation stage
-        t_gen_start = time.perf_counter()
-        user_prompt = build_rag_user_prompt(
-            question=clean_query,
-            formatted_context=built_context.formatted_context,
-        )
+            # 4. Context construction stage
+            async with start_span(
+                "context_construction", {"candidates_in": len(reranked_candidates)}
+            ):
+                built_context = self.context_builder.build_context(
+                    candidates=reranked_candidates,
+                    max_context_chars=self.settings.RAG_MAX_CONTEXT_CHARS,
+                )
 
-        completion_req = CompletionRequest(
-            prompt=user_prompt,
-            system_instruction=RAG_SYSTEM_INSTRUCTION,
-            temperature=0.2,
-            max_tokens=1024,
-        )
+            # 5. LLM Generation stage
+            t_gen_start = time.perf_counter()
+            user_prompt = build_rag_user_prompt(
+                question=clean_query,
+                formatted_context=built_context.formatted_context,
+            )
 
-        completion_resp = await self.llm_provider.generate_text(completion_req)
-        answer = completion_resp.text.strip()
-        generation_latency_ms = (time.perf_counter() - t_gen_start) * 1000
+            completion_req = CompletionRequest(
+                prompt=user_prompt,
+                system_instruction=RAG_SYSTEM_INSTRUCTION,
+                temperature=0.2,
+                max_tokens=1024,
+            )
 
-        # 6. Citation extraction stage
-        citations = CitationGenerator.generate_citations(
-            answer=answer,
-            included_chunks=built_context.included_chunks,
-        )
+            async with start_span(
+                "llm_generation",
+                {"provider": self.settings.LLM_PROVIDER, "model": self.settings.GEMINI_MODEL},
+            ):
+                completion_resp = await self.llm_provider.generate_text(completion_req)
+                answer = completion_resp.text.strip()
+            generation_latency_ms = (time.perf_counter() - t_gen_start) * 1000
+            record_llm_latency(
+                self.settings.LLM_PROVIDER, completion_resp.model, generation_latency_ms / 1000.0
+            )
 
-        total_latency_ms = (time.perf_counter() - t_total_start) * 1000
+            # 6. Citation extraction stage
+            async with start_span(
+                "citation_extraction", {"chunks_count": len(built_context.included_chunks)}
+            ):
+                citations = CitationGenerator.generate_citations(
+                    answer=answer,
+                    included_chunks=built_context.included_chunks,
+                )
 
-        metrics = RAGMetrics(
-            retrieval_count=len(initial_candidates),
-            final_context_count=len(built_context.included_chunks),
-            total_latency_ms=round(total_latency_ms, 2),
-            retrieval_latency_ms=round(retrieval_latency_ms, 2),
-            rerank_latency_ms=round(rerank_latency_ms, 2),
-            generation_latency_ms=round(generation_latency_ms, 2),
-        )
+            total_latency_ms = (time.perf_counter() - t_total_start) * 1000
 
-        # 7. Evaluation Hook Payload
-        evaluation_payload = RAGEvaluationPayload.record_execution(
-            query=clean_query,
-            workspace_id=workspace_id,
-            initial_candidates=initial_candidates,
-            reranked_candidates=reranked_candidates,
-            final_context_chunks=built_context.included_chunks,
-            answer=answer,
-            citations=citations,
-            latency_breakdown={
-                "total": metrics.total_latency_ms,
-                "retrieval": metrics.retrieval_latency_ms,
-                "rerank": metrics.rerank_latency_ms,
-                "generation": metrics.generation_latency_ms,
-            },
-            extra_metadata={
-                "retrieval_mode": mode,
-                "enable_reranking": enable_rerank,
-                "model": completion_resp.model,
-                "tokens_estimate": built_context.token_count_estimate,
-            },
-        )
+            metrics = RAGMetrics(
+                retrieval_count=len(initial_candidates),
+                final_context_count=len(built_context.included_chunks),
+                total_latency_ms=round(total_latency_ms, 2),
+                retrieval_latency_ms=round(retrieval_latency_ms, 2),
+                rerank_latency_ms=round(rerank_latency_ms, 2),
+                generation_latency_ms=round(generation_latency_ms, 2),
+            )
 
-        return RAGExecutionResult(
-            answer=answer,
-            citations=citations,
-            metrics=metrics,
-            evaluation_payload=evaluation_payload,
-            included_chunks=built_context.included_chunks,
-        )
+            # 7. Evaluation Hook Payload
+            evaluation_payload = RAGEvaluationPayload.record_execution(
+                query=clean_query,
+                workspace_id=workspace_id,
+                initial_candidates=initial_candidates,
+                reranked_candidates=reranked_candidates,
+                final_context_chunks=built_context.included_chunks,
+                answer=answer,
+                citations=citations,
+                latency_breakdown={
+                    "total": metrics.total_latency_ms,
+                    "retrieval": metrics.retrieval_latency_ms,
+                    "rerank": metrics.rerank_latency_ms,
+                    "generation": metrics.generation_latency_ms,
+                },
+                extra_metadata={
+                    "retrieval_mode": mode,
+                    "enable_reranking": enable_rerank,
+                    "model": completion_resp.model,
+                    "tokens_estimate": built_context.token_count_estimate,
+                },
+            )
+
+            return RAGExecutionResult(
+                answer=answer,
+                citations=citations,
+                metrics=metrics,
+                evaluation_payload=evaluation_payload,
+                included_chunks=built_context.included_chunks,
+            )
+
+        # Wrap in trace if not already in active trace
+        parent_trace = get_current_trace()
+        if parent_trace is None:
+            async with start_trace("rag_query", workspace_id=workspace_id) as trace:
+                res = await _execute_steps()
+                get_trace_repository().save_trace(trace)
+                return res
+        else:
+            return await _execute_steps()

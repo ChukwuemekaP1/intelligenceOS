@@ -106,50 +106,75 @@ class AgentRunner:
 
         start_time = time.perf_counter()
 
-        try:
-            final_state: dict[str, Any] = await asyncio.wait_for(
-                app_graph.ainvoke(initial_state),
-                timeout=effective_timeout,
-            )
-            total_latency_ms = (time.perf_counter() - start_time) * 1000.0
+        from app.observability.repository import get_trace_repository
+        from app.observability.tracer import get_current_trace, start_span, start_trace
 
-            final_text = (
-                final_state.get("final_response")
-                or "The agent finished execution without returning an answer."
-            )
-            status = final_state.get("status", ExecutionStatus.COMPLETED.value)
-            steps = final_state.get("steps", [])
+        async def _invoke_graph() -> AgentRunResult:
+            try:
+                final_state: dict[str, Any] = await asyncio.wait_for(
+                    app_graph.ainvoke(initial_state),
+                    timeout=effective_timeout,
+                )
+                total_latency_ms = (time.perf_counter() - start_time) * 1000.0
 
-            return AgentRunResult(
-                final_response=final_text,
-                status=status,
-                steps=steps,
-                steps_count=len(steps),
-                total_latency_ms=round(total_latency_ms, 2),
-                error=final_state.get("error"),
-            )
+                final_text = (
+                    final_state.get("final_response")
+                    or "The agent finished execution without returning an answer."
+                )
+                status = final_state.get("status", ExecutionStatus.COMPLETED.value)
+                steps = final_state.get("steps", [])
 
-        except TimeoutError:
-            total_latency_ms = (time.perf_counter() - start_time) * 1000.0
-            logger.error(f"Agent execution timed out after {effective_timeout}s.")
-            return AgentRunResult(
-                final_response=(
-                    "Agent execution timed out before a complete response could be formed."
-                ),
-                status=ExecutionStatus.FAILED.value,
-                steps=[],
-                steps_count=0,
-                total_latency_ms=round(total_latency_ms, 2),
-                error=f"Execution timed out after {effective_timeout}s.",
-            )
-        except Exception as exc:
-            total_latency_ms = (time.perf_counter() - start_time) * 1000.0
-            logger.exception(f"Unhandled error during agent execution: {exc}")
-            return AgentRunResult(
-                final_response="An unexpected error occurred during agent execution.",
-                status=ExecutionStatus.FAILED.value,
-                steps=[],
-                steps_count=0,
-                total_latency_ms=round(total_latency_ms, 2),
-                error=str(exc),
-            )
+                return AgentRunResult(
+                    final_response=final_text,
+                    status=status,
+                    steps=steps,
+                    steps_count=len(steps),
+                    total_latency_ms=round(total_latency_ms, 2),
+                    error=final_state.get("error"),
+                )
+
+            except TimeoutError:
+                total_latency_ms = (time.perf_counter() - start_time) * 1000.0
+                logger.error(f"Agent execution timed out after {effective_timeout}s.")
+                return AgentRunResult(
+                    final_response=(
+                        "Agent execution timed out before a complete response could be formed."
+                    ),
+                    status=ExecutionStatus.FAILED.value,
+                    steps=[],
+                    steps_count=0,
+                    total_latency_ms=round(total_latency_ms, 2),
+                    error=f"Execution timed out after {effective_timeout}s.",
+                )
+            except Exception as exc:
+                total_latency_ms = (time.perf_counter() - start_time) * 1000.0
+                logger.exception(f"Unhandled error during agent execution: {exc}")
+                return AgentRunResult(
+                    final_response="An unexpected error occurred during agent execution.",
+                    status=ExecutionStatus.FAILED.value,
+                    steps=[],
+                    steps_count=0,
+                    total_latency_ms=round(total_latency_ms, 2),
+                    error=str(exc),
+                )
+
+        parent_trace = get_current_trace()
+        if parent_trace is None:
+            async with start_trace("agent_execution", workspace_id=workspace_id) as trace:
+                res = await _invoke_graph()
+                for step in res.steps:
+                    span_op = (
+                        f"tool:{step.get('tool_name')}" if step.get("tool_name") else "reasoning"
+                    )
+                    async with start_span(
+                        span_op,
+                        {
+                            "step_index": step.get("step_index"),
+                            "duration_ms": step.get("duration_ms"),
+                        },
+                    ):
+                        pass
+                get_trace_repository().save_trace(trace)
+                return res
+        else:
+            return await _invoke_graph()

@@ -26,9 +26,9 @@ dependencies = [
     "pillow>=12.3.0",
     "pytesseract>=0.3.13",
     "qdrant-client>=1.19.1",
-    "boto3>=1.43.108",
     "python-multipart>=0.0.32",
     "langgraph>=1.2.12",
+    "prometheus-client>=0.20.0",
 ]
 
 [project.optional-dependencies]

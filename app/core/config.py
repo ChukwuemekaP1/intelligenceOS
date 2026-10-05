@@ -1,5 +1,6 @@
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import quote_plus
 
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -22,6 +23,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "dev-secret-key-32-characters-minimum-for-intelligence-os"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    CORS_ORIGINS: list[str] | str = ["*"]
 
     # PostgreSQL
     POSTGRES_SERVER: str = "postgres"
@@ -33,6 +35,8 @@ class Settings(BaseSettings):
 
     # Redis
     REDIS_URL: str = "redis://redis:6379/0"
+    REDIS_CONNECT_TIMEOUT: float = 10.0
+    REDIS_SOCKET_TIMEOUT: float = 10.0
 
     # LLM Provider Configuration
     LLM_PROVIDER: Literal["gemini", "mock"] = "gemini"
@@ -44,15 +48,14 @@ class Settings(BaseSettings):
     LOG_FORMAT: Literal["json", "console"] = "json"
 
     # =========================================================================
-    # Phase 2: Object Storage (S3-Compatible / MinIO)
+    # Object Storage (Supabase Storage)
     # =========================================================================
-    # Storage backend: 's3' (MinIO/S3), 'local' (disk), or 'mock' (in-memory tests)
-    STORAGE_BACKEND: Literal["s3", "local", "mock"] = "s3"
-    S3_ENDPOINT_URL: str = "http://minio:9000"
-    S3_ACCESS_KEY: str = "minioadmin"
-    S3_SECRET_KEY: SecretStr = SecretStr("minioadmin")
-    S3_BUCKET_NAME: str = "intelligenceos-sources"
-    S3_REGION: str = "us-east-1"
+    # Storage backend: 'supabase' (Supabase Storage), 'local' (disk), or 'mock' (in-memory tests)
+    STORAGE_BACKEND: Literal["supabase", "local", "mock"] = "supabase"
+    SUPABASE_URL: str | None = None
+    SUPABASE_SERVICE_ROLE_KEY: SecretStr | None = None
+    SUPABASE_STORAGE_BUCKET: str = "IntellegnceOS(Files)"
+    SUPABASE_ANON_KEY: SecretStr | None = None
     LOCAL_STORAGE_DIR: str = "./storage_data"
     MAX_UPLOAD_SIZE_BYTES: int = 20 * 1024 * 1024  # 20 MB limit
 
@@ -64,6 +67,7 @@ class Settings(BaseSettings):
     QDRANT_URL: str | None = None
     QDRANT_API_KEY: SecretStr | None = None
     QDRANT_COLLECTION: str = "intelligenceos_chunks"
+    QDRANT_TIMEOUT: float = 15.0
 
     # =========================================================================
     # Phase 2: Embedding Provider Configuration
@@ -99,16 +103,31 @@ class Settings(BaseSettings):
     WEB_SEARCH_PROVIDER: str = "mock"
     WEB_SEARCH_MAX_RESULTS: int = 5
 
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: object) -> list[str]:
+        if isinstance(v, str):
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        if isinstance(v, list):
+            return [str(origin).strip() for origin in v]
+        return ["*"]
+
     @property
     def async_database_url(self) -> str:
         if self.DATABASE_URL:
-            # Ensure using asyncpg driver
+            # Ensure using asyncpg driver and handle sslmode query param
             url = str(self.DATABASE_URL)
-            if url.startswith("postgresql://"):
-                return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            if url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+            elif url.startswith("postgresql://"):
+                url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            if "sslmode=" in url:
+                url = url.replace("sslmode=", "ssl=")
             return url
+        encoded_user = quote_plus(self.POSTGRES_USER)
+        encoded_password = quote_plus(self.POSTGRES_PASSWORD)
         return (
-            f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"postgresql+asyncpg://{encoded_user}:{encoded_password}"
             f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
 

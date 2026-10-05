@@ -14,3 +14,12 @@ class ReadinessResponse(BaseModel):
     )
     checks: dict[str, str] = Field(description="Health status of external dependencies")
     timestamp: datetime = Field(description="Current UTC timestamp")
+
+
+class ComprehensiveHealthResponse(BaseModel):
+    status: str = Field(description="'ok' if healthy, else 'degraded'")
+    database: str = Field(description="Database health: 'ok' or 'unhealthy'")
+    redis: str = Field(description="Redis health: 'ok' or 'unhealthy'")
+    qdrant: str = Field(description="Qdrant vector store health: 'ok' or 'unhealthy'")
+    storage: str = Field(description="Object storage health: 'ok' or 'unhealthy'")
+    timestamp: datetime = Field(description="Current UTC timestamp")

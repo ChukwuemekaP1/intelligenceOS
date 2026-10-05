@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: intelligenceos
+  labels:
+    app.kubernetes.io/name: intelligenceos
+    app.kubernetes.io/part-of: intelligenceos

@@ -4,7 +4,7 @@ from app.core.config import Settings, get_settings
 from app.storage.base import StorageBackend
 from app.storage.local import LocalStorageBackend
 from app.storage.mock import MockStorageBackend
-from app.storage.s3 import S3StorageBackend
+from app.storage.supabase import SupabaseStorageBackend
 
 _storage_instance: StorageBackend | None = None
 
@@ -13,7 +13,7 @@ def get_storage_backend(settings: Settings | None = None) -> StorageBackend:
     """Returns the singleton instance of the configured StorageBackend.
 
     Selects between:
-      - 's3': S3StorageBackend (MinIO / AWS S3)
+      - 'supabase': SupabaseStorageBackend (Supabase Storage buckets)
       - 'local': LocalStorageBackend (Local filesystem)
       - 'mock': MockStorageBackend (In-memory test store)
     """
@@ -29,7 +29,7 @@ def get_storage_backend(settings: Settings | None = None) -> StorageBackend:
     elif settings.STORAGE_BACKEND == "local":
         _storage_instance = LocalStorageBackend(base_dir=settings.LOCAL_STORAGE_DIR)
     else:
-        _storage_instance = S3StorageBackend(settings=settings)
+        _storage_instance = SupabaseStorageBackend(settings=settings)
 
     return _storage_instance
 

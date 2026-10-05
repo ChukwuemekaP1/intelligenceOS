@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: intelligenceos-worker
+  namespace: intelligenceos
+  labels:
+    app: intelligenceos-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: intelligenceos-worker
+  template:
+    metadata:
+      labels:
+        app: intelligenceos-worker
+    spec:
+      containers:
+        - name: worker
+          image: intelligenceos-api:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.worker"]
+          envFrom:
+            - configMapRef:
+                name: intelligenceos-config
+            - secretRef:
+                name: intelligenceos-secrets
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 4Gi

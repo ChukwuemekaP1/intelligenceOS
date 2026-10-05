@@ -72,7 +72,12 @@ class RedisJobQueue(JobQueue):
             logger.info(f"Enqueued job {job.id} of type '{job_type}' to '{self.queue_name}'")
             return job.id
         except Exception as exc:
-            logger.error(f"Failed to enqueue job to Redis: {exc}")
+            err_msg = str(exc)
+            if "@" in err_msg:
+                err_msg = err_msg.split("@")[-1]
+            logger.error(
+                f"Failed to enqueue job {job.id} to Redis queue '{self.queue_name}': {err_msg}"
+            )
             raise
 
     async def dequeue(self, timeout: int = 2) -> Job | None:
@@ -86,14 +91,21 @@ class RedisJobQueue(JobQueue):
             data = json.loads(item_data)
             return Job(**data)
         except Exception as exc:
-            logger.error(f"Error dequeuing job from Redis: {exc}")
+            err_msg = str(exc)
+            if "@" in err_msg:
+                err_msg = err_msg.split("@")[-1]
+            logger.error(f"Error dequeuing job from Redis queue '{self.queue_name}': {err_msg}")
             return None
 
     async def length(self) -> int:
         client = get_redis_client()
         try:
             return await client.llen(self.queue_name)
-        except Exception:
+        except Exception as exc:
+            err_msg = str(exc)
+            if "@" in err_msg:
+                err_msg = err_msg.split("@")[-1]
+            logger.warning(f"Error checking Redis queue length: {err_msg}")
             return 0
 
 

@@ -55,11 +55,13 @@ class ScriptMockLLM(LLMProvider):
             self.idx += 1
             return CompletionResponse(text=json.dumps(resp), model="mock-model")
         return CompletionResponse(
-            text=json.dumps({
-                "thought": "Evidence collected.",
-                "action": "final_answer",
-                "final_response": "I have completed the task based on the collected evidence.",
-            }),
+            text=json.dumps(
+                {
+                    "thought": "Evidence collected.",
+                    "action": "final_answer",
+                    "final_response": "I have completed the task based on the collected evidence.",
+                }
+            ),
             model="mock-model",
         )
 
@@ -202,19 +204,23 @@ async def main() -> None:
         print("\n--- Flow 1: Knowledge Search Tool ---")
         q1 = "What was Quantum Dynamics total revenue in Q4?"
         runner1 = AgentRunner(
-            llm_provider=ScriptMockLLM([
-                {
-                    "thought": "Need to search workspace documents for Q4 revenue.",
-                    "action": "call_tool",
-                    "tool_name": "knowledge_search",
-                    "tool_input": {"query": "Quantum Dynamics Q4 revenue"},
-                },
-                {
-                    "thought": "Found revenue figure: $42.5M.",
-                    "action": "final_answer",
-                    "final_response": "Quantum Dynamics achieved a total revenue of $42.5M in Q4.",
-                },
-            ]),
+            llm_provider=ScriptMockLLM(
+                [
+                    {
+                        "thought": "Need to search workspace documents for Q4 revenue.",
+                        "action": "call_tool",
+                        "tool_name": "knowledge_search",
+                        "tool_input": {"query": "Quantum Dynamics Q4 revenue"},
+                    },
+                    {
+                        "thought": "Found revenue figure: $42.5M.",
+                        "action": "final_answer",
+                        "final_response": (
+                            "Quantum Dynamics achieved a total revenue of $42.5M in Q4."
+                        ),
+                    },
+                ]
+            ),
             vector_store=vstore,
         )
         resp1 = await AgentService.execute_agent(
@@ -255,6 +261,7 @@ async def main() -> None:
         print("\n--- Flow 3: Read-Only SQL Tool ---")
         sql_tool = ReadOnlySQLTool()
         from app.tools.base import ToolExecutionContext
+
         sql_ctx = ToolExecutionContext(workspace_id=ws_a.id, session=session)
         sql_res = await sql_tool.execute(
             ReadOnlySQLInput(query="SELECT name, source_type FROM sources"),
@@ -281,25 +288,27 @@ async def main() -> None:
         print("\n--- Flow 5: Combining Multiple Tools (Knowledge Search + Calculator) ---")
         q5 = "Find our Q4 revenue and calculate a 10% bonus pool."
         runner5 = AgentRunner(
-            llm_provider=ScriptMockLLM([
-                {
-                    "thought": "Search workspace documents for Q4 revenue.",
-                    "action": "call_tool",
-                    "tool_name": "knowledge_search",
-                    "tool_input": {"query": "Q4 revenue"},
-                },
-                {
-                    "thought": "Revenue is 42.5M. Now calculate 10% of 42.5M.",
-                    "action": "call_tool",
-                    "tool_name": "calculator",
-                    "tool_input": {"expression": "42.5 * 0.10"},
-                },
-                {
-                    "thought": "10% of 42.5M is 4.25M. Formulating response.",
-                    "action": "final_answer",
-                    "final_response": "At Q4 revenue of $42.5M, the 10% bonus pool is $4.25M.",
-                },
-            ]),
+            llm_provider=ScriptMockLLM(
+                [
+                    {
+                        "thought": "Search workspace documents for Q4 revenue.",
+                        "action": "call_tool",
+                        "tool_name": "knowledge_search",
+                        "tool_input": {"query": "Q4 revenue"},
+                    },
+                    {
+                        "thought": "Revenue is 42.5M. Now calculate 10% of 42.5M.",
+                        "action": "call_tool",
+                        "tool_name": "calculator",
+                        "tool_input": {"expression": "42.5 * 0.10"},
+                    },
+                    {
+                        "thought": "10% of 42.5M is 4.25M. Formulating response.",
+                        "action": "final_answer",
+                        "final_response": "At Q4 revenue of $42.5M, the 10% bonus pool is $4.25M.",
+                    },
+                ]
+            ),
             vector_store=vstore,
         )
         resp5 = await AgentService.execute_agent(
@@ -320,19 +329,21 @@ async def main() -> None:
         # --- FLOW 6: Unauthorized Tool Usage Rejection ---
         print("\n--- Flow 6: Unauthorized Tool Usage Rejection ---")
         unauth_runner = AgentRunner(
-            llm_provider=ScriptMockLLM([
-                {
-                    "thought": "Trying to run SQL even though only calculator is permitted.",
-                    "action": "call_tool",
-                    "tool_name": "read_only_sql",
-                    "tool_input": {"query": "SELECT 1"},
-                },
-                {
-                    "thought": "SQL rejected as unauthorized. Finishing.",
-                    "action": "final_answer",
-                    "final_response": "Cannot query the database: tool is unauthorized.",
-                },
-            ])
+            llm_provider=ScriptMockLLM(
+                [
+                    {
+                        "thought": "Trying to run SQL even though only calculator is permitted.",
+                        "action": "call_tool",
+                        "tool_name": "read_only_sql",
+                        "tool_input": {"query": "SELECT 1"},
+                    },
+                    {
+                        "thought": "SQL rejected as unauthorized. Finishing.",
+                        "action": "final_answer",
+                        "final_response": "Cannot query the database: tool is unauthorized.",
+                    },
+                ]
+            )
         )
         resp6 = await AgentService.execute_agent(
             session=session,
@@ -350,19 +361,21 @@ async def main() -> None:
         # --- FLOW 7: Workspace Isolation Check ---
         print("\n--- Flow 7: Multi-Tenant Workspace Isolation ---")
         runner7 = AgentRunner(
-            llm_provider=ScriptMockLLM([
-                {
-                    "thought": "Searching for Skynet in Workspace A.",
-                    "action": "call_tool",
-                    "tool_name": "knowledge_search",
-                    "tool_input": {"query": "Skynet"},
-                },
-                {
-                    "thought": "No documents found for Skynet in Workspace A.",
-                    "action": "final_answer",
-                    "final_response": "No documents found mentioning Skynet in this workspace.",
-                },
-            ]),
+            llm_provider=ScriptMockLLM(
+                [
+                    {
+                        "thought": "Searching for Skynet in Workspace A.",
+                        "action": "call_tool",
+                        "tool_name": "knowledge_search",
+                        "tool_input": {"query": "Skynet"},
+                    },
+                    {
+                        "thought": "No documents found for Skynet in Workspace A.",
+                        "action": "final_answer",
+                        "final_response": "No documents found mentioning Skynet in this workspace.",
+                    },
+                ]
+            ),
             vector_store=vstore,
         )
         resp7 = await AgentService.execute_agent(
@@ -394,15 +407,17 @@ async def main() -> None:
 
         # --- FLOW 9: Bounded Step Budget Enforcement ---
         print("\n--- Flow 9: Bounded Step Budget Enforcement ---")
-        looping_llm = ScriptMockLLM([
-            {
-                "thought": f"Loop step {i}",
-                "action": "call_tool",
-                "tool_name": "calculator",
-                "tool_input": {"expression": f"{i} + 1"},
-            }
-            for i in range(10)
-        ])
+        looping_llm = ScriptMockLLM(
+            [
+                {
+                    "thought": f"Loop step {i}",
+                    "action": "call_tool",
+                    "tool_name": "calculator",
+                    "tool_input": {"expression": f"{i} + 1"},
+                }
+                for i in range(10)
+            ]
+        )
         loop_runner = AgentRunner(llm_provider=looping_llm)
         resp_budget = await AgentService.execute_agent(
             session=session,
