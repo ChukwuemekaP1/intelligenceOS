@@ -145,3 +145,15 @@ class QuestionResponse(BaseModel):
     answer: str
     citations: list[Citation]
     metrics: RAGMetrics
+    # Indicates which retrieval path was actually used:
+    # "hybrid" (semantic + lexical), "semantic" (dense only), "lexical" (Qdrant unavailable)
+    retrieval_mode_used: str = Field(
+        default="hybrid",
+        description="Retrieval strategy that was actually executed",
+    )
+    # True when the knowledge base had no relevant content for this question.
+    # The answer will contain the canonical insufficient-evidence phrase.
+    insufficient_knowledge: bool = Field(
+        default=False,
+        description="True when retrieval found no usable evidence for the question",
+    )

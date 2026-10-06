@@ -18,13 +18,16 @@ logger = logging.getLogger("app.providers.gemini")
 class GeminiProvider(LLMProvider):
     """Google Gemini LLM provider implementation using the official google-genai SDK."""
 
-    def __init__(self, api_key: str | None, model: str = "gemini-2.5-flash") -> None:
+    def __init__(self, api_key: str | None, model: str = "gemini-3.5-flash-lite") -> None:
         if not api_key or api_key.strip() == "" or api_key == "your-gemini-api-key-here":
             raise LLMAuthenticationError(
                 message="Gemini API key is missing or not configured.",
                 provider="gemini",
             )
         self._api_key = api_key
+        # Automatically map retired model to supported gemini-3.5-flash-lite
+        if model in ("gemini-2.0-flash-lite", ""):
+            model = "gemini-3.5-flash-lite"
         self._model = model
         self._client: Any = None
 
@@ -69,11 +72,11 @@ class GeminiProvider(LLMProvider):
                 usage_dict = None
                 if hasattr(response, "usage_metadata") and response.usage_metadata:
                     usage_dict = {
-                        "prompt_tokens": getattr(response.usage_metadata, "prompt_token_count", 0),
-                        "completion_tokens": getattr(
-                            response.usage_metadata, "candidates_token_count", 0
+                        "prompt_tokens": getattr(response.usage_metadata, "prompt_token_count", 0) or 0,
+                        "completion_tokens": (
+                            getattr(response.usage_metadata, "candidates_token_count", 0) or 0
                         ),
-                        "total_tokens": getattr(response.usage_metadata, "total_token_count", 0),
+                        "total_tokens": getattr(response.usage_metadata, "total_token_count", 0) or 0,
                     }
 
                 return CompletionResponse(

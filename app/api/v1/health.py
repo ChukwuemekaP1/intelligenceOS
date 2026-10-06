@@ -1,3 +1,13 @@
+"""Health, liveness, and readiness probes.
+
+Exposes:
+- /health       — comprehensive check (DB + Redis + Qdrant + Storage + Queue depth)
+- /healthz      — liveness (process alive)
+- /health/live  — liveness alias
+- /readyz       — readiness (DB + Redis required)
+- /health/ready — readiness alias
+"""
+
 import asyncio
 from datetime import UTC, datetime
 
@@ -28,18 +38,29 @@ async def check_storage_health() -> bool:
         return False
 
 
+async def get_queue_depth() -> int:
+    """Returns current ingestion queue depth, or -1 on error."""
+    try:
+        from app.queue.job_queue import get_job_queue
+        queue = get_job_queue()
+        return await queue.length()
+    except Exception:
+        return -1
+
+
 @router.get(
     "/health",
     response_model=ComprehensiveHealthResponse,
     summary="Production System Health",
 )
 async def health(response: Response) -> ComprehensiveHealthResponse:
-    """Comprehensive readiness probe verifying PostgreSQL, Redis, Qdrant, and Supabase Storage."""
-    db_ok, redis_ok, qdrant_ok, storage_ok = await asyncio.gather(
+    """Comprehensive readiness probe: PostgreSQL + Redis + Qdrant + Supabase Storage + Queue."""
+    db_ok, redis_ok, qdrant_ok, storage_ok, queue_depth = await asyncio.gather(
         check_database_health(),
         check_redis_health(),
         check_qdrant_health(),
         check_storage_health(),
+        get_queue_depth(),
     )
 
     all_ok = db_ok and redis_ok and qdrant_ok and storage_ok
@@ -52,6 +73,7 @@ async def health(response: Response) -> ComprehensiveHealthResponse:
         redis="ok" if redis_ok else "unhealthy",
         qdrant="ok" if qdrant_ok else "unhealthy",
         storage="ok" if storage_ok else "unhealthy",
+        queue_depth=queue_depth,
         timestamp=datetime.now(UTC),
     )
 
@@ -59,17 +81,14 @@ async def health(response: Response) -> ComprehensiveHealthResponse:
 @router.get("/healthz", response_model=HealthResponse, summary="Liveness Probe")
 @router.get("/health/live", response_model=HealthResponse, summary="Liveness Probe (Alias)")
 async def liveness() -> HealthResponse:
-    """Basic liveness probe checking that the application process is running."""
-    return HealthResponse(
-        status="ok",
-        timestamp=datetime.now(UTC),
-    )
+    """Basic liveness probe — confirms the application process is running."""
+    return HealthResponse(status="ok", timestamp=datetime.now(UTC))
 
 
 @router.get("/readyz", response_model=ReadinessResponse, summary="Readiness Probe")
 @router.get("/health/ready", response_model=ReadinessResponse, summary="Readiness Probe (Alias)")
 async def readiness(response: Response) -> ReadinessResponse:
-    """Readiness probe evaluating connectivity to PostgreSQL and Redis."""
+    """Readiness probe — confirms PostgreSQL and Redis are reachable."""
     db_healthy, redis_healthy = await asyncio.gather(
         check_database_health(),
         check_redis_health(),

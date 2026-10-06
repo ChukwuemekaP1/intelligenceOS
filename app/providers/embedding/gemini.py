@@ -24,10 +24,13 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "text-embedding-004",
+        model: str = "gemini-embedding-001",
         dimension: int = 768,
     ) -> None:
         self.api_key = api_key
+        # Automatically map deprecated text-embedding-004 to supported gemini-embedding-001
+        if model in ("text-embedding-004", ""):
+            model = "gemini-embedding-001"
         self.model = model
         self._dimension = dimension
 
@@ -65,12 +68,21 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
             raise EmbeddingAuthenticationError("Gemini API key is not configured.")
 
         def _call_api() -> list[list[float]]:
-            # google-genai client.models.embed_content accepts list of contents
+            from google.genai import types
+
+            config = None
+            if self._dimension:
+                config = types.EmbedContentConfig(output_dimensionality=self._dimension)
+
             response = self._client.models.embed_content(
                 model=self.model,
                 contents=texts,
+                config=config,
             )
             embeddings = getattr(response, "embeddings", [])
+            if not embeddings and hasattr(response, "embedding") and response.embedding:
+                embeddings = [response.embedding]
+
             results: list[list[float]] = []
             for item in embeddings:
                 values = getattr(item, "values", None)

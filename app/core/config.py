@@ -35,13 +35,16 @@ class Settings(BaseSettings):
 
     # Redis
     REDIS_URL: str = "redis://redis:6379/0"
-    REDIS_CONNECT_TIMEOUT: float = 10.0
-    REDIS_SOCKET_TIMEOUT: float = 10.0
+    REDIS_CONNECT_TIMEOUT: float = 15.0
+    REDIS_SOCKET_TIMEOUT: float = 15.0
+    # Set to "none" only for private Redis instances with self-signed TLS certificates.
+    # Never use in production without understanding the security implications.
+    REDIS_SSL_CERT_REQS: str = "required"
 
     # LLM Provider Configuration
     LLM_PROVIDER: Literal["gemini", "mock"] = "gemini"
     GEMINI_API_KEY: SecretStr | None = None
-    GEMINI_MODEL: str = "gemini-2.0-flash"
+    GEMINI_MODEL: str = "gemini-3.5-flash-lite"
 
     # Logging
     LOG_LEVEL: str = "INFO"
@@ -74,7 +77,7 @@ class Settings(BaseSettings):
     # =========================================================================
     # Select between 'gemini' (live embeddings) or 'mock' (fast deterministic offline vectors)
     EMBEDDING_PROVIDER: Literal["gemini", "mock"] = "gemini"
-    GEMINI_EMBEDDING_MODEL: str = "text-embedding-004"
+    GEMINI_EMBEDDING_MODEL: str = "gemini-embedding-001"
     EMBEDDING_DIMENSION: int = 768
 
     # =========================================================================
@@ -102,6 +105,11 @@ class Settings(BaseSettings):
     AGENT_SQL_TIMEOUT_SECONDS: float = 5.0
     WEB_SEARCH_PROVIDER: str = "mock"
     WEB_SEARCH_MAX_RESULTS: int = 5
+
+    # Worker stale-job detection
+    # Sources stuck in PROCESSING for longer than this are eligible for failure marking
+    WORKER_STALE_THRESHOLD_SECONDS: int = 600   # 10 minutes
+    WORKER_STALE_SCAN_INTERVAL_SECONDS: int = 120  # scan every 2 minutes
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

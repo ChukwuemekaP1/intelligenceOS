@@ -1,4 +1,12 @@
-"""Service managing conversation sessions, message persistence, and grounded RAG execution."""
+"""Service managing conversation sessions, message persistence, and grounded RAG execution.
+
+Key improvements:
+- Conversation history is now passed to the RAG pipeline for proper multi-turn context.
+  The last N turns (bounded) are serialised and injected into the LLM prompt.
+- retrieval_mode_used and insufficient_knowledge are stored in assistant message metadata
+  so the frontend can display accurate retrieval state.
+- History is bounded to the last 12 messages (6 turns) to avoid token overflow.
+"""
 
 import uuid
 from datetime import UTC, datetime
@@ -21,6 +29,33 @@ from app.schemas.rag import (
 )
 
 logger = get_logger("app.services.conversation_service")
+
+# Maximum number of prior messages to include in the LLM history context.
+# 12 messages = 6 full user/assistant turns.
+_MAX_HISTORY_MESSAGES = 12
+
+
+def _build_history(messages: list[Message]) -> list[dict]:
+    """Converts the most recent N messages into the format expected by the RAG prompt builder.
+
+    Returns a list of {"role": "user"|"assistant", "content": "..."} dicts,
+    ordered oldest-first, bounded to _MAX_HISTORY_MESSAGES.
+    """
+    if not messages:
+        return []
+
+    # Sort by created_at ascending (oldest first) and take the last N
+    sorted_msgs = sorted(messages, key=lambda m: m.created_at)
+    recent = sorted_msgs[-_MAX_HISTORY_MESSAGES:]
+
+    history = []
+    for msg in recent:
+        role = msg.role  # "user" or "assistant"
+        content = (msg.content or "").strip()
+        if content:
+            history.append({"role": role, "content": content})
+
+    return history
 
 
 class ConversationService:
@@ -46,7 +81,10 @@ class ConversationService:
         await session.commit()
         await session.refresh(conversation)
 
-        logger.info(f"Created conversation '{conversation.id}' for workspace '{workspace_id}'.")
+        logger.info(
+            f"[CONVERSATION] Created conversation_id={conversation.id} "
+            f"workspace_id={workspace_id}"
+        )
         return conversation
 
     @staticmethod
@@ -103,7 +141,10 @@ class ConversationService:
 
         await session.delete(conversation)
         await session.commit()
-        logger.info(f"Deleted conversation '{conversation_id}' in workspace '{workspace_id}'.")
+        logger.info(
+            f"[CONVERSATION] Deleted conversation_id={conversation_id} "
+            f"workspace_id={workspace_id}"
+        )
         return True
 
     @staticmethod
@@ -115,7 +156,12 @@ class ConversationService:
         user: User | None = None,
         pipeline: RAGPipeline | None = None,
     ) -> QuestionResponse:
-        """Executes full Grounded RAG pipeline and persists messages atomically."""
+        """Executes full Grounded RAG pipeline and persists messages atomically.
+
+        The conversation history (excluding the current question) is passed to the
+        RAG pipeline so the LLM can resolve follow-up references and maintain context
+        across multiple turns.
+        """
         # 1. Verify conversation exists and belongs to workspace
         conversation = await ConversationService.get_conversation(
             session, conversation_id, workspace_id
@@ -123,16 +169,38 @@ class ConversationService:
         if not conversation:
             raise NotFoundError("Conversation not found in workspace.")
 
-        # 2. Execute RAG pipeline
+        # 2. Build conversation history from prior messages
+        #    We exclude the current question (not yet persisted) — it is already in the query.
+        prior_messages = list(conversation.messages) if conversation.messages else []
+        conversation_history = _build_history(prior_messages)
+
+        logger.info(
+            f"[RAG REQUEST] conversation_id={conversation_id} "
+            f"workspace_id={workspace_id} "
+            f"history_turns={len(conversation_history)} "
+            f"question_chars={len(request.question)}"
+        )
+
+        # 3. Execute RAG pipeline with conversation history
         rag_pipeline = pipeline or RAGPipeline(session=session)
         rag_result = await rag_pipeline.execute(
             workspace_id=workspace_id,
             query=request.question,
             retrieval_config=request.retrieval_config,
             source_ids=request.source_ids or None,
+            conversation_history=conversation_history if conversation_history else None,
         )
 
-        # 3. Persist User Message
+        logger.info(
+            f"[RAG RESULT] conversation_id={conversation_id} "
+            f"retrieval_count={rag_result.metrics.retrieval_count} "
+            f"context_count={rag_result.metrics.final_context_count} "
+            f"insufficient_knowledge={rag_result.insufficient_knowledge} "
+            f"retrieval_mode={rag_result.retrieval_mode_used} "
+            f"total_ms={rag_result.metrics.total_latency_ms}"
+        )
+
+        # 4. Persist User Message
         user_message = Message(
             id=uuid.uuid4(),
             conversation_id=conversation.id,
@@ -145,7 +213,7 @@ class ConversationService:
         )
         session.add(user_message)
 
-        # 4. Persist Assistant Message with Citations and Evaluation Telemetry
+        # 5. Persist Assistant Message with Citations and Evaluation Telemetry
         metrics_dict = rag_result.metrics.model_dump()
         assistant_message = Message(
             id=uuid.uuid4(),
@@ -162,16 +230,21 @@ class ConversationService:
                 "final_context_count": metrics_dict.get("final_context_count"),
                 "total_latency_ms": metrics_dict.get("total_latency_ms"),
                 "generation_latency_ms": metrics_dict.get("generation_latency_ms"),
+                # Retrieval state — visible to frontend
+                "retrieval_mode_used": rag_result.retrieval_mode_used,
+                "insufficient_knowledge": rag_result.insufficient_knowledge,
+                # Source filter scope
+                "source_ids_filter": (
+                    [str(s) for s in request.source_ids] if request.source_ids else None
+                ),
                 # Full nested metrics for evaluation tooling
                 "metrics": metrics_dict,
                 "rag_evaluation": rag_result.evaluation_payload.model_dump(mode="json"),
-                # Scope info
-                "source_ids_filter": [str(s) for s in request.source_ids] if request.source_ids else None,
             },
         )
         session.add(assistant_message)
 
-        # 5. Update Conversation metadata (auto-title if default)
+        # 6. Update Conversation metadata (auto-title if still default)
         if conversation.title == "New Conversation":
             first_q = request.question.strip()
             conversation.title = (first_q[:57] + "...") if len(first_q) > 60 else first_q
@@ -189,4 +262,6 @@ class ConversationService:
             answer=rag_result.answer,
             citations=rag_result.citations,
             metrics=rag_result.metrics,
+            retrieval_mode_used=rag_result.retrieval_mode_used,
+            insufficient_knowledge=rag_result.insufficient_knowledge,
         )

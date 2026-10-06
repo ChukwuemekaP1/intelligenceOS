@@ -22,4 +22,8 @@ class ComprehensiveHealthResponse(BaseModel):
     redis: str = Field(description="Redis health: 'ok' or 'unhealthy'")
     qdrant: str = Field(description="Qdrant vector store health: 'ok' or 'unhealthy'")
     storage: str = Field(description="Object storage health: 'ok' or 'unhealthy'")
+    queue_depth: int = Field(
+        default=-1,
+        description="Current ingestion queue depth (-1 if unavailable)",
+    )
     timestamp: datetime = Field(description="Current UTC timestamp")

@@ -1,11 +1,13 @@
 import uuid
 from collections.abc import AsyncGenerator
+from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 
 from app.core.config import Settings, get_settings
+from app.providers.llm.mock import MockLLMProvider
 from app.queue.job_queue import get_job_queue
 from app.storage.factory import get_storage_backend
 
@@ -14,7 +16,7 @@ settings = get_settings()
 
 @pytest_asyncio.fixture(autouse=True)
 async def setup_e2e_services() -> AsyncGenerator[None, None]:
-    """Configures mock storage, vector store and queue for fast deterministic test execution."""
+    """Configures mock storage, vector store, queue, and LLM for fast deterministic test execution."""
     test_settings = Settings(
         STORAGE_BACKEND="mock",
         ENVIRONMENT="testing",
@@ -23,7 +25,16 @@ async def setup_e2e_services() -> AsyncGenerator[None, None]:
     )
     get_storage_backend(test_settings)
     get_job_queue(test_settings)
-    yield
+
+    # Patch the LLM provider factory so the agent runner doesn't call real Gemini.
+    # This is needed because get_settings() is lru_cached and the agent service
+    # calls get_llm_provider() using the cached global settings.
+    mock_llm = MockLLMProvider(
+        default_response='{"action": "final_answer", "thought": "test", "final_response": "Mock agent response for E2E test."}'
+    )
+    with patch("app.providers.llm.factory.get_llm_provider", return_value=mock_llm):
+        with patch("app.services.agent_service.get_llm_provider", return_value=mock_llm):
+            yield
 
 
 @pytest.mark.asyncio
