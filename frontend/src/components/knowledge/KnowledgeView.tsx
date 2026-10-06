@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../api/client';
-import { Source, Document } from '../../types';
+import { Source, DocumentChunk } from '../../types';
 import {
   UploadCloud,
   Globe,
@@ -15,6 +15,7 @@ import {
   X,
   Database,
   Ban,
+  Layers,
 } from 'lucide-react';
 
 export const KnowledgeView: React.FC = () => {
@@ -35,11 +36,12 @@ export const KnowledgeView: React.FC = () => {
 
   // Inspector Modal
   const [selectedSource, setSelectedSource] = useState<Source | null>(null);
-  const [selectedDocDetails, setSelectedDocDetails] = useState<Document | null>(null);
+  const [inspectedChunks, setInspectedChunks] = useState<DocumentChunk[]>([]);
+  const [loadingChunks, setLoadingChunks] = useState(false);
 
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  const fetchSources = async () => {
+  const fetchSources = useCallback(async () => {
     if (!currentWorkspace) return;
     try {
       const data = await api.listSources(currentWorkspace.id);
@@ -49,13 +51,13 @@ export const KnowledgeView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentWorkspace?.id]);
 
   useEffect(() => {
     fetchSources();
     const interval = setInterval(fetchSources, 4000);
     return () => clearInterval(interval);
-  }, [currentWorkspace?.id]);
+  }, [fetchSources]);
 
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,7 +66,7 @@ export const KnowledgeView: React.FC = () => {
     setMessage(null);
     try {
       await api.uploadFileSource(currentWorkspace.id, fileToUpload, fileTitle || fileToUpload.name);
-      setMessage({ text: 'File uploaded to Supabase Storage and scheduled for ingestion!', type: 'success' });
+      setMessage({ text: 'File uploaded and scheduled for ingestion.', type: 'success' });
       setFileToUpload(null);
       setFileTitle('');
       await fetchSources();
@@ -82,7 +84,7 @@ export const KnowledgeView: React.FC = () => {
     setMessage(null);
     try {
       await api.submitUrlSource(currentWorkspace.id, websiteUrl.trim(), websiteTitle || undefined);
-      setMessage({ text: 'Website submitted and queued for SSRF-safe crawling!', type: 'success' });
+      setMessage({ text: 'Website URL queued for ingestion.', type: 'success' });
       setWebsiteUrl('');
       setWebsiteTitle('');
       await fetchSources();
@@ -97,7 +99,7 @@ export const KnowledgeView: React.FC = () => {
     if (!currentWorkspace) return;
     try {
       await api.retryIngestion(currentWorkspace.id, sourceId);
-      setMessage({ text: 'Ingestion retry triggered successfully.', type: 'success' });
+      setMessage({ text: 'Ingestion retry triggered.', type: 'success' });
       await fetchSources();
     } catch (err: any) {
       setMessage({ text: `Retry failed: ${err.message}`, type: 'error' });
@@ -106,7 +108,7 @@ export const KnowledgeView: React.FC = () => {
 
   const handleCancel = async (sourceId: string) => {
     if (!currentWorkspace) return;
-    if (!confirm('Are you sure you want to cancel this in-progress ingestion?')) return;
+    if (!confirm('Cancel this ingestion?')) return;
     try {
       await api.cancelSource(currentWorkspace.id, sourceId);
       setMessage({ text: 'Ingestion cancelled.', type: 'success' });
@@ -118,30 +120,41 @@ export const KnowledgeView: React.FC = () => {
 
   const handleDelete = async (sourceId: string) => {
     if (!currentWorkspace) return;
-    if (!confirm('Are you sure you want to delete this source and purge its embeddings?')) return;
+    if (!confirm('Delete this source and purge its embeddings?')) return;
     try {
       await api.deleteSource(currentWorkspace.id, sourceId);
-      setMessage({ text: 'Source deleted successfully.', type: 'success' });
+      setMessage({ text: 'Source deleted.', type: 'success' });
       setSources((prev) => prev.filter((s) => s.id !== sourceId));
-      await fetchSources();
     } catch (err: any) {
       setMessage({ text: `Delete failed: ${err.message}`, type: 'error' });
     }
   };
 
+  // FIX: load chunks via the dedicated /chunks endpoint instead of reading
+  // from source.documents[0].chunks (which is never populated in SourceResponse)
   const inspectSource = async (source: Source) => {
     if (!currentWorkspace) return;
+    setSelectedSource(source);
+    setInspectedChunks([]);
+
+    if (source.status !== 'completed') return;
+
+    setLoadingChunks(true);
     try {
-      const full = await api.getSource(currentWorkspace.id, source.id);
-      setSelectedSource(full);
-      if (full.documents && full.documents.length > 0) {
-        setSelectedDocDetails(full.documents[0]);
-      } else {
-        setSelectedDocDetails(null);
-      }
+      const chunks = await api.getSourceChunks(currentWorkspace.id, source.id);
+      setInspectedChunks(chunks);
     } catch (err) {
-      setSelectedSource(source);
+      console.error('Failed to load chunks:', err);
+    } finally {
+      setLoadingChunks(false);
     }
+  };
+
+  // Close modal and reset chunk state
+  const closeModal = () => {
+    setSelectedSource(null);
+    setInspectedChunks([]);
+    setLoadingChunks(false);
   };
 
   if (!currentWorkspace) {
@@ -162,7 +175,7 @@ export const KnowledgeView: React.FC = () => {
             <span>Knowledge Ingestion Hub</span>
           </h1>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-            Upload PDF, CSV, images (OCR), and crawl verified web pages into partitioned vector storage.
+            Upload PDF, CSV, text files and crawl verified web pages into partitioned vector storage.
           </p>
         </div>
       </div>
@@ -176,7 +189,7 @@ export const KnowledgeView: React.FC = () => {
           }`}
         >
           <span>{message.text}</span>
-          <button onClick={() => setMessage(null)} className="text-xs hover:underline">
+          <button onClick={() => setMessage(null)} className="text-xs hover:underline ml-4">
             Dismiss
           </button>
         </div>
@@ -194,7 +207,7 @@ export const KnowledgeView: React.FC = () => {
             }`}
           >
             <UploadCloud className="w-4 h-4" />
-            <span>Upload Document / Image (OCR)</span>
+            <span>Upload Document</span>
           </button>
 
           <button
@@ -219,7 +232,7 @@ export const KnowledgeView: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Q3 Financial Report & Risk Guidance"
+                  placeholder="e.g. Q3 Financial Report"
                   value={fileTitle}
                   onChange={(e) => setFileTitle(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
@@ -228,12 +241,12 @@ export const KnowledgeView: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Select File (PDF, CSV, TXT, PNG, JPG - max 20MB)
+                  Select File (PDF, CSV, TXT — max 20MB)
                 </label>
                 <input
                   type="file"
                   required
-                  accept=".pdf,.csv,.txt,.png,.jpg,.jpeg"
+                  accept=".pdf,.csv,.txt,.md"
                   onChange={(e) => setFileToUpload(e.target.files?.[0] || null)}
                   className="w-full text-xs text-slate-500 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-950 file:text-indigo-600 dark:file:text-indigo-400 hover:file:bg-indigo-100 dark:hover:file:bg-indigo-900 cursor-pointer"
                 />
@@ -247,7 +260,7 @@ export const KnowledgeView: React.FC = () => {
                 className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-5 py-2.5 rounded-xl text-sm transition-all disabled:opacity-50 shadow-md shadow-indigo-600/20"
               >
                 <UploadCloud className="w-4 h-4" />
-                <span>{isUploading ? 'Uploading & Parsing...' : 'Ingest Document'}</span>
+                <span>{isUploading ? 'Uploading...' : 'Upload & Ingest'}</span>
               </button>
             </div>
           </form>
@@ -256,11 +269,11 @@ export const KnowledgeView: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Website Title
+                  Website Title (Optional)
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Antigravity Architecture Documentation"
+                  placeholder="e.g. Documentation Overview"
                   value={websiteTitle}
                   onChange={(e) => setWebsiteTitle(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
@@ -269,7 +282,7 @@ export const KnowledgeView: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Web Page URL (SSRF Protected)
+                  Web Page URL
                 </label>
                 <input
                   type="url"
@@ -315,20 +328,22 @@ export const KnowledgeView: React.FC = () => {
         </div>
 
         {loading ? (
-          <div className="p-12 text-center text-slate-500 dark:text-slate-400">Loading knowledge sources...</div>
+          <div className="p-12 text-center text-slate-500 dark:text-slate-400">
+            Loading knowledge sources...
+          </div>
         ) : sources.length === 0 ? (
           <div className="p-12 text-center text-slate-500">
-            No sources in this workspace yet. Upload a document or URL to begin.
+            No sources yet. Upload a document or submit a URL to begin.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 text-xs uppercase font-semibold border-b border-slate-200 dark:border-slate-800">
                 <tr>
-                  <th className="px-6 py-3.5">Title & Source</th>
+                  <th className="px-6 py-3.5">Title &amp; Source</th>
                   <th className="px-6 py-3.5">Type</th>
                   <th className="px-6 py-3.5">Status</th>
-                  <th className="px-6 py-3.5">Documents / Chunks</th>
+                  <th className="px-6 py-3.5">Chunks</th>
                   <th className="px-6 py-3.5">Created</th>
                   <th className="px-6 py-3.5 text-right">Actions</th>
                 </tr>
@@ -341,6 +356,7 @@ export const KnowledgeView: React.FC = () => {
                         <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
                         <span className="truncate max-w-xs">{s.title || s.name || 'Untitled Source'}</span>
                       </div>
+                      {/* FIX: error_message now comes directly from SourceResponse (not buried in metadata) */}
                       {s.error_message && (
                         <div className="text-xs text-rose-600 dark:text-rose-400 mt-1 flex items-center space-x-1">
                           <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
@@ -365,7 +381,7 @@ export const KnowledgeView: React.FC = () => {
                       {(s.status === 'pending' || s.status === 'processing') && (
                         <span className="inline-flex items-center space-x-1.5 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/40 px-2.5 py-1 rounded-full">
                           <Clock className="w-3.5 h-3.5 animate-spin" />
-                          <span>{s.status}</span>
+                          <span>{s.status === 'pending' ? 'Pending' : 'Processing…'}</span>
                         </span>
                       )}
                       {s.status === 'failed' && (
@@ -382,14 +398,19 @@ export const KnowledgeView: React.FC = () => {
                       )}
                     </td>
 
+                    {/* FIX: chunk_count is now a top-level field on SourceResponse, not nested in documents */}
                     <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-300">
-                      {s.documents && s.documents.length > 0 ? (
-                        <span>
-                          {s.documents.length} doc{s.documents.length > 1 ? 's' : ''} (
-                          {s.documents.reduce((acc, d) => acc + (d.chunk_count || 0), 0)} chunks)
+                      {s.status === 'completed' ? (
+                        <span className="inline-flex items-center space-x-1 text-emerald-700 dark:text-emerald-400">
+                          <Layers className="w-3.5 h-3.5" />
+                          <span>{s.chunk_count} chunk{s.chunk_count !== 1 ? 's' : ''}</span>
                         </span>
+                      ) : s.status === 'processing' || s.status === 'pending' ? (
+                        <span className="text-amber-500 dark:text-amber-400">Processing…</span>
+                      ) : s.status === 'failed' ? (
+                        <span className="text-rose-500">—</span>
                       ) : (
-                        <span className="text-slate-400">-</span>
+                        <span className="text-slate-400">—</span>
                       )}
                     </td>
 
@@ -400,7 +421,7 @@ export const KnowledgeView: React.FC = () => {
                     <td className="px-6 py-4 text-right space-x-2">
                       <button
                         onClick={() => inspectSource(s)}
-                        title="Inspect Chunks and Metadata"
+                        title="Inspect Chunks"
                         className="p-1.5 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-950 dark:hover:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-800 transition-colors"
                       >
                         <Eye className="w-3.5 h-3.5" />
@@ -419,7 +440,7 @@ export const KnowledgeView: React.FC = () => {
                       {(s.status === 'failed' || s.status === 'cancelled') && (
                         <button
                           onClick={() => handleRetry(s.id)}
-                          title="Retry Ingestion Pipeline"
+                          title="Retry Ingestion"
                           className="p-1.5 text-amber-600 dark:text-amber-400 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 rounded-lg border border-amber-200 dark:border-amber-800/60 transition-colors"
                         >
                           <RotateCw className="w-3.5 h-3.5" />
@@ -442,21 +463,23 @@ export const KnowledgeView: React.FC = () => {
         )}
       </div>
 
-      {/* Source Details & Chunk Inspector Modal */}
+      {/* Source Inspector Modal */}
       {selectedSource && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Modal header */}
             <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-slate-900 dark:text-white text-base truncate max-w-xl">
-                  {selectedSource.title}
+                  {selectedSource.title || selectedSource.name}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  ID: <span className="font-mono">{selectedSource.id}</span> • Type: {selectedSource.source_type}
+                  ID: <span className="font-mono">{selectedSource.id}</span>{' '}
+                  · Type: <span className="uppercase font-mono">{selectedSource.source_type}</span>
                 </p>
               </div>
               <button
-                onClick={() => setSelectedSource(null)}
+                onClick={closeModal}
                 className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 rounded-lg"
               >
                 <X className="w-5 h-5" />
@@ -464,60 +487,102 @@ export const KnowledgeView: React.FC = () => {
             </div>
 
             <div className="p-6 overflow-y-auto space-y-6">
-              {/* Document Overview */}
+              {/* Status overview */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                 <div className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800">
                   <span className="text-slate-400">Status</span>
-                  <div className="font-bold text-slate-900 dark:text-white uppercase mt-0.5">{selectedSource.status}</div>
+                  <div className="font-bold text-slate-900 dark:text-white uppercase mt-0.5">
+                    {selectedSource.status}
+                  </div>
+                </div>
+                <div className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800">
+                  <span className="text-slate-400">Chunks Indexed</span>
+                  <div className="font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">
+                    {selectedSource.status === 'completed'
+                      ? selectedSource.chunk_count
+                      : selectedSource.status === 'processing' || selectedSource.status === 'pending'
+                      ? '…'
+                      : '—'}
+                  </div>
+                </div>
+                <div className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800">
+                  <span className="text-slate-400">Characters</span>
+                  <div className="font-bold text-slate-900 dark:text-white mt-0.5">
+                    {selectedSource.metadata?.total_characters != null
+                      ? Number(selectedSource.metadata.total_characters).toLocaleString()
+                      : '—'}
+                  </div>
                 </div>
                 <div className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800">
                   <span className="text-slate-400">File Size</span>
                   <div className="font-bold text-slate-900 dark:text-white mt-0.5">
-                    {selectedSource.raw_file_size
-                      ? `${(selectedSource.raw_file_size / 1024).toFixed(1)} KB`
-                      : 'N/A'}
-                  </div>
-                </div>
-                <div className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800">
-                  <span className="text-slate-400">MIME Type</span>
-                  <div className="font-mono text-slate-900 dark:text-white mt-0.5 truncate">
-                    {selectedSource.mime_type || 'text/html'}
-                  </div>
-                </div>
-                <div className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800">
-                  <span className="text-slate-400">Documents</span>
-                  <div className="font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">
-                    {selectedSource.documents?.length || 0}
+                    {selectedSource.metadata?.file_size != null
+                      ? `${(Number(selectedSource.metadata.file_size) / 1024).toFixed(1)} KB`
+                      : '—'}
                   </div>
                 </div>
               </div>
 
-              {/* Document Chunks */}
+              {/* Error message if failed */}
+              {selectedSource.status === 'failed' && selectedSource.error_message && (
+                <div className="p-4 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 rounded-xl text-xs text-rose-700 dark:text-rose-300 flex items-start space-x-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-semibold">Ingestion Error: </span>
+                    {selectedSource.error_message}
+                  </div>
+                </div>
+              )}
+
+              {/* Chunks section */}
               <div>
-                <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3">Extracted Document Chunks</h4>
-                {selectedDocDetails?.chunks && selectedDocDetails.chunks.length > 0 ? (
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3 flex items-center space-x-2">
+                  <Layers className="w-4 h-4 text-indigo-500" />
+                  <span>Extracted &amp; Indexed Chunks</span>
+                  {inspectedChunks.length > 0 && (
+                    <span className="text-xs font-normal text-slate-500">({inspectedChunks.length} loaded)</span>
+                  )}
+                </h4>
+
+                {selectedSource.status === 'pending' || selectedSource.status === 'processing' ? (
+                  <div className="p-6 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 rounded-xl text-xs text-amber-700 dark:text-amber-400 text-center">
+                    <Clock className="w-5 h-5 mx-auto mb-2 animate-spin" />
+                    Ingestion is in progress — chunks will appear once completed.
+                  </div>
+                ) : loadingChunks ? (
+                  <div className="p-6 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-500 text-center">
+                    Loading chunks…
+                  </div>
+                ) : inspectedChunks.length > 0 ? (
                   <div className="space-y-3">
-                    {selectedDocDetails.chunks.map((chunk) => (
+                    {inspectedChunks.map((chunk) => (
                       <div
                         key={chunk.id}
                         className="p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs space-y-2"
                       >
-                        <div className="flex items-center justify-between text-slate-500">
+                        <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
                           <span className="font-mono text-indigo-600 dark:text-indigo-400 font-semibold">
                             Chunk #{chunk.chunk_index}
                           </span>
-                          <span>{chunk.char_count} characters</span>
-                          {chunk.page_number && <span>Page {chunk.page_number}</span>}
+                          <span>{chunk.char_count.toLocaleString()} chars</span>
+                          {chunk.page_number != null && (
+                            <span>Page {chunk.page_number}</span>
+                          )}
                         </div>
+                        {/* FIX: field name is `content`, not `text_content` */}
                         <p className="text-slate-800 dark:text-slate-300 font-mono text-[11px] leading-relaxed whitespace-pre-wrap bg-white dark:bg-slate-900/60 p-3 rounded-lg border border-slate-200 dark:border-slate-800/80">
-                          {chunk.text_content}
+                          {chunk.content}
                         </p>
                       </div>
                     ))}
                   </div>
                 ) : (
                   <div className="p-6 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-500 text-center">
-                    No chunk records found for this document or parsing is still in progress.
+                    {selectedSource.status === 'failed'
+                      ? 'No chunks were created — ingestion failed before indexing.'
+                      : selectedSource.status === 'cancelled'
+                      ? 'Ingestion was cancelled before chunks were created.'
+                      : 'No chunks found for this source.'}
                   </div>
                 )}
               </div>
@@ -528,4 +593,5 @@ export const KnowledgeView: React.FC = () => {
     </div>
   );
 };
+
 export default KnowledgeView;

@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     # LLM Provider Configuration
     LLM_PROVIDER: Literal["gemini", "mock"] = "gemini"
     GEMINI_API_KEY: SecretStr | None = None
-    GEMINI_MODEL: str = "gemini-3.8-flash"
+    GEMINI_MODEL: str = "gemini-2.0-flash"
 
     # Logging
     LOG_LEVEL: str = "INFO"

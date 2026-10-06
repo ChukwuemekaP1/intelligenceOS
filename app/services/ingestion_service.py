@@ -333,7 +333,10 @@ class IngestionService:
         version.status = ProcessingStatus.PROCESSING.value
         await session.commit()
 
-        logger.info(f"source ID: {source_id}, workspace ID: {workspace_id}")
+        logger.info(
+            f"[PIPELINE START] source_id={source_id} source_type={source.source_type} "
+            f"workspace_id={workspace_id} name='{source.name}'"
+        )
 
         try:
             # 2. Retrieve content
@@ -347,20 +350,32 @@ class IngestionService:
             }
 
             if version.storage_key:
-                logger.info(f"Downloading object '{version.storage_key}' from storage...")
+                logger.info(
+                    f"[RETRIEVE] Downloading from storage: key='{version.storage_key}'"
+                )
                 content_bytes = await storage_backend.download_file(version.storage_key)
                 logger.info(
-                    f"file retrieved: key='{version.storage_key}', bytes={len(content_bytes)}"
+                    f"[RETRIEVE] file retrieved: key='{version.storage_key}', "
+                    f"bytes={len(content_bytes)}, extraction_success={len(content_bytes) > 0}"
                 )
             else:
-                logger.info(f"file retrieved: (direct url source, bytes={len(content_bytes)})")
+                logger.info(
+                    f"[RETRIEVE] URL source — content will be fetched by parser: "
+                    f"url='{source.metadata_.get('url')}'"
+                )
 
             # 3. Parse content into canonical NormalizedDocument
             parser = get_parser(source.source_type)
             norm_doc = await parser.parse(content_bytes, metadata=parse_metadata)
+            char_count = norm_doc.total_characters
             logger.info(
-                f"text extraction completed: elements={len(norm_doc.elements)}, "
-                f"title='{norm_doc.title}'"
+                f"[EXTRACT] text extraction completed: "
+                f"source_id={source_id} "
+                f"source_type={source.source_type} "
+                f"title='{norm_doc.title}' "
+                f"elements={len(norm_doc.elements)} "
+                f"character_count={char_count} "
+                f"extraction_success={len(norm_doc.elements) > 0}"
             )
 
             # 4. Chunk document
@@ -375,7 +390,10 @@ class IngestionService:
             if not chunks_data:
                 raise ParserError("Ingestion produced zero text chunks.")
 
-            logger.info(f"chunk count: {len(chunks_data)} for source '{source.id}'")
+            logger.info(
+                f"[CHUNK] chunk count: {len(chunks_data)} "
+                f"source_id={source.id} document_count=1"
+            )
 
             # 5. Generate embeddings
             chunk_texts = [c.content for c in chunks_data]
@@ -386,7 +404,10 @@ class IngestionService:
                     f"Vector count mismatch: generated {len(vectors)} embeddings "
                     f"for {len(chunks_data)} chunks."
                 )
-            logger.info(f"embedding completed: generated {len(vectors)} vectors")
+            logger.info(
+                f"[EMBED] embedding completed: "
+                f"source_id={source.id} embedding_count={len(vectors)}"
+            )
 
             # 6. Idempotently update Qdrant (remove previous vectors for this version if re-running)
             await vstore.ensure_collection()
@@ -416,7 +437,12 @@ class IngestionService:
                 )
 
             await vstore.upsert_points(workspace_id, vector_points)
-            logger.info(f"Qdrant upsert completed: count={len(vector_points)}")
+            logger.info(
+                f"[QDRANT] upsert completed: "
+                f"source_id={source.id} "
+                f"workspace_id={workspace_id} "
+                f"qdrant_upsert_count={len(vector_points)}"
+            )
 
             # 7. Persist Chunk entities in PostgreSQL
             # Remove any prior DB chunks for this version (guarantees idempotency on retry)
@@ -440,13 +466,21 @@ class IngestionService:
             source.metadata_ = dict(
                 source.metadata_,
                 total_chunks=len(chunks_data),
+                total_characters=char_count,
+                document_count=1,
                 title=norm_doc.title,
             )
             await session.commit()
             logger.info(
-                f"database update completed: chunks={len(chunks_data)}, status={source.status}"
+                f"[COMPLETE] pipeline finished: "
+                f"source_id={source.id} "
+                f"source_type={source.source_type} "
+                f"document_count=1 "
+                f"chunk_count={len(chunks_data)} "
+                f"embedding_count={len(vectors)} "
+                f"qdrant_upsert_count={len(vector_points)} "
+                f"final_status={source.status}"
             )
-            logger.info(f"job completed: source_id={source.id}")
 
         except Exception as exc:
             await session.rollback()

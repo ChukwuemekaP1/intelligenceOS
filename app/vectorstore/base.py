@@ -87,6 +87,7 @@ class VectorStore(ABC):
         query_vector: list[float],
         limit: int = 10,
         score_threshold: float | None = None,
+        source_ids: list[uuid.UUID] | None = None,
     ) -> list[SearchResult]:
         """Searches for nearest neighbor vector points within the specified workspace.
 
@@ -95,6 +96,7 @@ class VectorStore(ABC):
             query_vector: Dense embedding vector of the search query.
             limit: Maximum number of points to retrieve.
             score_threshold: Minimum similarity score threshold.
+            source_ids: Optional list of source UUIDs to restrict retrieval scope.
 
         Returns:
             List of SearchResult objects ordered by similarity descending.

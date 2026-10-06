@@ -82,8 +82,17 @@ class RAGPipeline:
         workspace_id: uuid.UUID,
         query: str,
         retrieval_config: RetrievalConfig | None = None,
+        source_ids: list[uuid.UUID] | None = None,
     ) -> RAGExecutionResult:
-        """Executes the full RAG pipeline with strict workspace tenant boundaries."""
+        """Executes the full RAG pipeline with strict workspace tenant boundaries.
+
+        Args:
+            workspace_id: Tenant workspace UUID.
+            query: User question string.
+            retrieval_config: Optional per-request retrieval parameter overrides.
+            source_ids: Optional list of source UUIDs to restrict retrieval scope.
+                        When None, all indexed sources in the workspace are searched.
+        """
         t_total_start = time.perf_counter()
 
         # 1. Parameter resolution
@@ -131,6 +140,7 @@ class RAGPipeline:
                     top_k=initial_top_k,
                     similarity_threshold=threshold,
                     mode=mode,
+                    source_ids=source_ids,
                 )
             retrieval_latency_ms = (time.perf_counter() - t_ret_start) * 1000
             record_retrieval_latency(mode, retrieval_latency_ms / 1000.0)

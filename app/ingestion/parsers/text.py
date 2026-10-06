@@ -35,7 +35,7 @@ class TextParser(BaseParser):
         # Extract title from first heading or metadata or filename
         title = meta.get("title")
         if not title:
-            lines = [l.strip() for l in text.splitlines() if l.strip()]
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
             if lines and lines[0].startswith("#"):
                 title = lines[0].lstrip("#").strip()
             else:
@@ -46,20 +46,28 @@ class TextParser(BaseParser):
         if not paragraphs:
             paragraphs = [text.strip()]
 
+        if not any(p for p in paragraphs):
+            raise ParserError("Text document contains no readable content.")
+
         elements: list[NormalizedElement] = []
         for idx, para in enumerate(paragraphs):
+            if not para:
+                continue
             elements.append(
                 NormalizedElement(
-                    index=idx,
-                    content=para,
-                    element_type="heading" if para.startswith("#") else "paragraph",
+                    element_index=idx,      # FIX: was `index=idx` (wrong field name)
+                    text=para,              # FIX: was `content=para` (wrong field name)
+                    page_number=None,
                     metadata={"filename": filename, "paragraph_index": idx},
                 )
             )
 
+        if not elements:
+            raise ParserError("Text document contains no readable content.")
+
         return NormalizedDocument(
-            source_type=SourceType.TEXT.value,
             title=title,
+            source_type=SourceType.TEXT,   # FIX: was SourceType.TEXT.value (string, not enum)
             elements=elements,
             raw_metadata=meta,
         )

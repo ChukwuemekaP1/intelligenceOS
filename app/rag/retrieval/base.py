@@ -19,6 +19,7 @@ class BaseRetriever(ABC):
         query: str,
         top_k: int = 20,
         similarity_threshold: float | None = None,
+        source_ids: list[uuid.UUID] | None = None,
     ) -> list[RetrievedChunk]:
         """Retrieves candidates strictly belonging to workspace_id.
 
@@ -27,6 +28,7 @@ class BaseRetriever(ABC):
             query: User search query string.
             top_k: Maximum candidate count to retrieve.
             similarity_threshold: Optional minimum similarity threshold.
+            source_ids: Optional list of source UUIDs to narrow retrieval scope.
 
         Returns:
             List of RetrievedChunk candidates ordered by relevance score descending.

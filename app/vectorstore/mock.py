@@ -85,6 +85,7 @@ class MockVectorStore(VectorStore):
         query_vector: list[float],
         limit: int = 10,
         score_threshold: float | None = None,
+        source_ids: list[uuid.UUID] | None = None,
     ) -> list[SearchResult]:
         if not self._is_healthy:
             raise VectorStoreError("Mock vector store is simulated unhealthy.")
@@ -94,8 +95,19 @@ class MockVectorStore(VectorStore):
         if not points_map:
             return []
 
+        # Optional source_ids filter
+        allowed_source_ids: set[str] | None = None
+        if source_ids:
+            allowed_source_ids = {str(sid) for sid in source_ids}
+
         scored_points: list[SearchResult] = []
         for pt in points_map.values():
+            # Apply source_ids filter if specified
+            if allowed_source_ids is not None:
+                pt_source = pt.payload.get("source_id")
+                if not pt_source or str(pt_source) not in allowed_source_ids:
+                    continue
+
             # Calculate cosine similarity
             dot = sum(a * b for a, b in zip(query_vector, pt.vector, strict=False))
             norm_a = math.sqrt(sum(a * a for a in query_vector)) or 1.0

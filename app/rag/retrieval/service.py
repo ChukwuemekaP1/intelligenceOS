@@ -61,12 +61,14 @@ class RetrievalService:
         top_k: int = 20,
         similarity_threshold: float | None = None,
         mode: Literal["semantic", "hybrid"] | None = None,
+        source_ids: list[uuid.UUID] | None = None,
     ) -> list[RetrievedChunk]:
-        """Executes retrieval with strict workspace filtering."""
+        """Executes retrieval with strict workspace filtering and optional source scope."""
         retriever = self.build_retriever(mode=mode)
         return await retriever.retrieve(
             workspace_id=workspace_id,
             query=query,
             top_k=top_k,
             similarity_threshold=similarity_threshold,
+            source_ids=source_ids,
         )

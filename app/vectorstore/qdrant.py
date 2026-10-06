@@ -200,16 +200,29 @@ class QdrantVectorStore(VectorStore):
         query_vector: list[float],
         limit: int = 10,
         score_threshold: float | None = None,
+        source_ids: list[uuid.UUID] | None = None,
     ) -> list[SearchResult]:
         ws_str = str(workspace_id)
-        tenant_filter = models.Filter(
-            must=[
+
+        # Always enforce workspace_id isolation
+        must_conditions: list[models.FieldCondition] = [
+            models.FieldCondition(
+                key="workspace_id",
+                match=models.MatchValue(value=ws_str),
+            ),
+        ]
+
+        # Optionally narrow to specific source IDs
+        if source_ids:
+            must_conditions.append(
                 models.FieldCondition(
-                    key="workspace_id",
-                    match=models.MatchValue(value=ws_str),
-                ),
-            ]
-        )
+                    key="source_id",
+                    match=models.MatchAny(any=[str(sid) for sid in source_ids]),
+                )
+            )
+
+        tenant_filter = models.Filter(must=must_conditions)
+
         try:
             response = await self._client.query_points(
                 collection_name=self.collection_name,

@@ -4,5 +4,13 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "env": {
+    "VITE_API_URL": "https://your-render-service.onrender.com"
+  },
+  "build": {
+    "env": {
+      "VITE_API_URL": "https://your-render-service.onrender.com"
+    }
+  }
 }

@@ -129,6 +129,7 @@ class ConversationService:
             workspace_id=workspace_id,
             query=request.question,
             retrieval_config=request.retrieval_config,
+            source_ids=request.source_ids or None,
         )
 
         # 3. Persist User Message
@@ -145,6 +146,7 @@ class ConversationService:
         session.add(user_message)
 
         # 4. Persist Assistant Message with Citations and Evaluation Telemetry
+        metrics_dict = rag_result.metrics.model_dump()
         assistant_message = Message(
             id=uuid.uuid4(),
             conversation_id=conversation.id,
@@ -154,8 +156,17 @@ class ConversationService:
             content=rag_result.answer,
             citations=[c.model_dump(mode="json") for c in rag_result.citations],
             metadata_={
-                "metrics": rag_result.metrics.model_dump(),
+                # Flat fields for easy frontend consumption
+                "retrieval_latency_ms": metrics_dict.get("retrieval_latency_ms"),
+                "chunks_retrieved": metrics_dict.get("retrieval_count"),
+                "final_context_count": metrics_dict.get("final_context_count"),
+                "total_latency_ms": metrics_dict.get("total_latency_ms"),
+                "generation_latency_ms": metrics_dict.get("generation_latency_ms"),
+                # Full nested metrics for evaluation tooling
+                "metrics": metrics_dict,
                 "rag_evaluation": rag_result.evaluation_payload.model_dump(mode="json"),
+                # Scope info
+                "source_ids_filter": [str(s) for s in request.source_ids] if request.source_ids else None,
             },
         )
         session.add(assistant_message)

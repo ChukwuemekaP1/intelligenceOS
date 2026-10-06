@@ -34,6 +34,7 @@ class SemanticRetriever(BaseRetriever):
         query: str,
         top_k: int = 20,
         similarity_threshold: float | None = None,
+        source_ids: list[uuid.UUID] | None = None,
     ) -> list[RetrievedChunk]:
         if not query.strip():
             return []
@@ -47,12 +48,13 @@ class SemanticRetriever(BaseRetriever):
             )
             raise
 
-        # 2. Query vector store with mandatory workspace filter
+        # 2. Query vector store with mandatory workspace filter and optional source filter
         search_results = await self.vector_store.search(
             workspace_id=workspace_id,
             query_vector=query_vector,
             limit=top_k,
             score_threshold=similarity_threshold,
+            source_ids=source_ids,
         )
 
         if not search_results:

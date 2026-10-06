@@ -213,6 +213,7 @@ class LexicalRetriever(BaseRetriever):
         query: str,
         top_k: int = 20,
         similarity_threshold: float | None = None,
+        source_ids: list[uuid.UUID] | None = None,
     ) -> list[RetrievedChunk]:
         terms = self._extract_terms(query)
         if not terms:
@@ -229,8 +230,13 @@ class LexicalRetriever(BaseRetriever):
                 Chunk.workspace_id == workspace_id,
                 or_(*conditions),
             )
-            .limit(top_k * 3)  # Retrieve wider candidate pool for BM25 ranking
         )
+
+        # Optional source scope filter — applied at SQL level, not post-fetch
+        if source_ids:
+            stmt = stmt.where(Source.id.in_(source_ids))
+
+        stmt = stmt.limit(top_k * 3)  # Wider candidate pool for BM25 ranking
 
         res = await self.session.execute(stmt)
         rows = res.all()

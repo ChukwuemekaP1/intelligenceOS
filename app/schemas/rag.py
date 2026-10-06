@@ -126,6 +126,14 @@ class QuestionRequest(BaseModel):
     retrieval_config: RetrievalConfig | None = Field(
         default=None, description="Optional per-request retrieval parameter overrides"
     )
+    source_ids: list[uuid.UUID] | None = Field(
+        default=None,
+        description=(
+            "Optional list of source UUIDs to restrict retrieval scope. "
+            "When provided, only vectors belonging to these sources are searched. "
+            "When null/omitted, all indexed sources in the workspace are searched."
+        ),
+    )
 
 
 class QuestionResponse(BaseModel):

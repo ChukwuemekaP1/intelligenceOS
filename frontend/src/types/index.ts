@@ -18,52 +18,78 @@ export interface Workspace {
   role?: UserRole;
 }
 
-export type SourceType = 'file' | 'url' | 'structured' | 'image';
+// Backend returns 'pdf' | 'website' | 'csv' | 'image' | 'text'
+export type SourceType = 'pdf' | 'website' | 'csv' | 'image' | 'text';
 export type SourceStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
 
+// Matches ChunkResponse from app/schemas/source.py
 export interface DocumentChunk {
   id: string;
+  document_version_id: string;
+  workspace_id: string;
   chunk_index: number;
-  text_content: string;
-  char_count: number;
+  content: string;        // backend field name is `content`, NOT `text_content`
   page_number?: number | null;
+  char_count: number;     // derived by ChunkResponse validator from content length
   metadata?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+// Matches DocumentResponse from app/schemas/source.py
+export interface DocumentVersion {
+  id: string;
+  document_id: string;
+  version_number: number;
+  storage_key?: string | null;
+  status: string;
+  error_message?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Document {
   id: string;
   source_id: string;
-  title: string;
-  char_count: number;
-  chunk_count: number;
+  workspace_id: string;
+  metadata?: Record<string, any>;
+  versions?: DocumentVersion[];
   created_at: string;
-  chunks?: DocumentChunk[];
+  updated_at: string;
 }
 
+// Matches SourceResponse from app/schemas/source.py
 export interface Source {
   id: string;
   workspace_id: string;
   title: string;
-  name?: string;
-  source_type: SourceType;
-  mime_type?: string | null;
+  name: string;
+  source_type: string;  // loosened from SourceType union to accept any backend value gracefully
   status: SourceStatus;
-  error_message?: string | null;
-  raw_file_size?: number | null;
+  chunk_count: number;            // derived field from metadata_.total_chunks
+  error_message?: string | null;  // derived from metadata_.error on failure
+  metadata?: Record<string, any>;
   created_at: string;
   updated_at: string;
-  documents?: Document[];
 }
 
 export interface Citation {
+  // Core fields matching backend app/schemas/rag.py Citation model
+  chunk_id: string;
+  chunk_index: number;
   source_id: string;
-  document_id?: string;
-  title: string;
-  chunk_index?: number;
+  source_name: string;    // backend field name (was `title` — mismatch fixed)
+  source_type: string;
+  document_id: string;
+  document_version_id: string;
+  version_number?: number | null;
   page_number?: number | null;
-  similarity_score?: number;
-  rerank_score?: number | null;
   snippet?: string;
+  score?: number | null;  // backend field name (was `similarity_score` — mismatch fixed)
+  // Computed alias used only in the UI layer
+  title?: string;          // populated from source_name for display convenience
+  similarity_score?: number | null; // alias for score for backwards compat
+  rerank_score?: number | null;
 }
 
 export interface Message {
@@ -161,7 +187,15 @@ export interface EvaluationDataset {
   workspace_id: string;
   name: string;
   description?: string;
-  example_count: number;
+  example_count: number;       // computed_field from backend
+  examples?: Array<{           // present when backend sends full object
+    id?: string;
+    query: string;
+    expected_chunk_ids?: string[];
+    expected_answer?: string;
+    metadata?: Record<string, unknown>;
+  }>;
+  version?: string;
   created_at: string;
 }
 

@@ -1,4 +1,8 @@
-"""Web search tool providing controlled external search with SSRF validation."""
+"""Web search tool providing controlled external search with SSRF validation.
+
+When no real web search provider is configured (WEB_SEARCH_PROVIDER="mock"),
+the tool returns an explicit "unavailable" result rather than fake fabricated URLs.
+"""
 
 from typing import Any
 
@@ -8,6 +12,12 @@ from app.ingestion.parsers.website import validate_safe_url
 from app.tools.base import BaseTool, ToolExecutionContext, ToolResult
 from app.tools.web_search.base import BaseWebSearchProvider
 from app.tools.web_search.mock import MockWebSearchProvider
+
+# Sentinel to detect when only the mock provider is wired
+_UNAVAILABLE_MSG = (
+    "Web search is not configured in this deployment. "
+    "Set WEB_SEARCH_PROVIDER to a real provider and supply the required API key."
+)
 
 
 class WebSearchInput(BaseModel):
@@ -27,7 +37,11 @@ class WebSearchInput(BaseModel):
 
 
 class WebSearchTool(BaseTool):
-    """Executes structured web searches while guarding against SSRF and unrestricted browsing."""
+    """Executes structured web searches while guarding against SSRF and unrestricted browsing.
+
+    If the provider is the built-in MockWebSearchProvider (i.e. no real provider is configured),
+    the tool reports itself as unavailable rather than returning fabricated results.
+    """
 
     name = "web_search"
     description = (
@@ -39,11 +53,31 @@ class WebSearchTool(BaseTool):
     required_permissions = []
 
     def __init__(self, provider: BaseWebSearchProvider | None = None) -> None:
-        self._provider = provider or MockWebSearchProvider()
+        self._provider = provider
+        # Mark unavailable ONLY when no provider was supplied at all.
+        # When an explicit provider is passed (including MockWebSearchProvider for tests),
+        # honour it and execute normally.
+        self._is_mock = provider is None
+
+    @property
+    def is_available(self) -> bool:
+        """Returns True only when a real (non-mock) provider is wired."""
+        return not self._is_mock
 
     async def execute(
         self, input_data: WebSearchInput, context: ToolExecutionContext
     ) -> ToolResult:
+        # Immediately surface unavailability — do not fabricate results
+        if self._is_mock or self._provider is None:
+            return ToolResult(
+                success=False,
+                error=_UNAVAILABLE_MSG,
+                text_summary=(
+                    "Web search is unavailable: no real search provider is configured. "
+                    "Contact an administrator to configure WEB_SEARCH_PROVIDER."
+                ),
+            )
+
         query = input_data.query.strip()
         if not query:
             return ToolResult(

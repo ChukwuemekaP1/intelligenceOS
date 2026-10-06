@@ -229,6 +229,12 @@ class ApiClient {
     });
   }
 
+  async getSourceChunks(workspaceId: string, sourceId: string, skip = 0, limit = 100): Promise<import('../types').DocumentChunk[]> {
+    return this.request<import('../types').DocumentChunk[]>(
+      `/api/v1/workspaces/${workspaceId}/sources/${sourceId}/chunks?skip=${skip}&limit=${limit}`
+    );
+  }
+
   // ==================== CONVERSATIONS & RAG ====================
   async listConversations(workspaceId: string): Promise<Conversation[]> {
     return this.request<Conversation[]>(`/api/v1/workspaces/${workspaceId}/conversations`);
@@ -253,6 +259,7 @@ class ApiClient {
       retrieval_mode?: 'hybrid' | 'semantic';
       top_k?: number;
       enable_reranking?: boolean;
+      source_ids?: string[];
     } = {}
   ): Promise<Message> {
     const res = await this.request<any>(
@@ -266,6 +273,10 @@ class ApiClient {
             final_top_k: options.top_k ?? 5,
             enable_reranking: options.enable_reranking ?? true,
           },
+          // Only send source_ids when the caller explicitly provides them
+          ...(options.source_ids && options.source_ids.length > 0
+            ? { source_ids: options.source_ids }
+            : {}),
         }),
       }
     );
@@ -326,11 +337,25 @@ class ApiClient {
   async createEvaluationDataset(
     workspaceId: string,
     name: string,
-    examples: Array<{ query: string; expected_chunk_ids: string[]; reference_answer?: string }>
+    examples: Array<{
+      query: string;
+      expected_chunk_ids: string[];
+      reference_answer?: string;
+      expected_answer?: string;
+      metadata?: Record<string, unknown>;
+    }>
   ): Promise<EvaluationDataset> {
+    // Backend expects a full EvaluationDataset body (POST /evaluations/datasets).
+    // Map reference_answer → expected_answer for backend EvaluationExample schema.
+    const mappedExamples = examples.map((ex) => ({
+      query: ex.query,
+      expected_chunk_ids: ex.expected_chunk_ids,
+      expected_answer: ex.expected_answer ?? ex.reference_answer ?? '',
+      metadata: ex.metadata ?? {},
+    }));
     return this.request<EvaluationDataset>(`/api/v1/workspaces/${workspaceId}/evaluations/datasets`, {
       method: 'POST',
-      body: JSON.stringify({ name, examples }),
+      body: JSON.stringify({ name, examples: mappedExamples }),
     });
   }
 
@@ -349,13 +374,21 @@ class ApiClient {
       evaluator_type?: 'deterministic' | 'llm';
     }
   ): Promise<EvaluationRun> {
+    // Map frontend evaluator_type → backend evaluator_mode field name
+    const evaluatorMode =
+      options.evaluator_type === 'llm' ? 'llm_assisted' : 'deterministic';
+    // Map 'reranked' pseudo-mode → hybrid + enable_reranking flag
+    const isReranked = options.retrieval_mode === 'reranked';
+    const retrievalMode = isReranked ? 'hybrid' : options.retrieval_mode;
+
     return this.request<EvaluationRun>(`/api/v1/workspaces/${workspaceId}/evaluations/run`, {
       method: 'POST',
       body: JSON.stringify({
         dataset_id: datasetId,
-        retrieval_mode: options.retrieval_mode,
+        retrieval_mode: retrievalMode,
         top_k: options.top_k ?? 5,
-        evaluator_type: options.evaluator_type ?? 'deterministic',
+        enable_reranking: isReranked,
+        evaluator_mode: evaluatorMode,
       }),
     });
   }
@@ -375,8 +408,9 @@ class ApiClient {
     baselineRunId: string,
     candidateRunId: string
   ): Promise<ExperimentComparison> {
+    // Backend expects run_a_id / run_b_id query params (see evaluation.py compare_experiments endpoint)
     return this.request<ExperimentComparison>(
-      `/api/v1/workspaces/${workspaceId}/evaluations/compare?baseline_id=${baselineRunId}&candidate_id=${candidateRunId}`
+      `/api/v1/workspaces/${workspaceId}/evaluations/compare?run_a_id=${baselineRunId}&run_b_id=${candidateRunId}`
     );
   }
 

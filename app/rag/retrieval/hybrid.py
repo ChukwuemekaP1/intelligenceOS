@@ -29,19 +29,22 @@ class HybridRetriever(BaseRetriever):
         query: str,
         top_k: int = 20,
         similarity_threshold: float | None = None,
+        source_ids: list[uuid.UUID] | None = None,
     ) -> list[RetrievedChunk]:
-        # Execute dense and lexical retrieval concurrently
+        # Execute dense and lexical retrieval concurrently, both scoped to source_ids
         dense_task = self.semantic_retriever.retrieve(
             workspace_id=workspace_id,
             query=query,
             top_k=top_k,
             similarity_threshold=similarity_threshold,
+            source_ids=source_ids,
         )
         lexical_task = self.lexical_retriever.retrieve(
             workspace_id=workspace_id,
             query=query,
             top_k=top_k,
             similarity_threshold=similarity_threshold,
+            source_ids=source_ids,
         )
 
         dense_res, lexical_res = await asyncio.gather(

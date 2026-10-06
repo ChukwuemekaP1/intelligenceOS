@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 class EvaluationExample(BaseModel):
@@ -31,6 +31,12 @@ class EvaluationDataset(BaseModel):
     examples: list[EvaluationExample] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def example_count(self) -> int:
+        """Number of examples in this dataset — exposed in JSON serialization."""
+        return len(self.examples)
+
 
 class EvaluationConfig(BaseModel):
     """Explicit parameters governing a reproducible evaluation experiment."""
@@ -42,7 +48,7 @@ class EvaluationConfig(BaseModel):
     final_top_k: int = 5
     similarity_threshold: float = 0.0
     embedding_model: str = "text-embedding-004"
-    llm_model: str = "gemini-3.8-flash"
+    llm_model: str = "gemini-2.0-flash"
     evaluator_mode: Literal["deterministic", "llm_assisted"] = "deterministic"
 
 

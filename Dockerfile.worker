@@ -1,0 +1,49 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# IntelligenceOS — Background Worker Dockerfile
+#
+# This image runs the async Redis-queue ingestion worker separately from the
+# FastAPI web service. On Render, create a Background Worker service that
+# builds from this file.
+#
+# Render deployment:
+#   Service type : Background Worker
+#   Build command: (empty — Docker build handles it)
+#   Start command: (empty — CMD below is used)
+#   Dockerfile   : Dockerfile.worker
+#
+# Environment variables (supply via Render dashboard / .env import — never
+# bake secrets into this image):
+#   DATABASE_URL, REDIS_URL, QDRANT_URL, QDRANT_API_KEY,
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_STORAGE_BUCKET,
+#   GEMINI_API_KEY, EMBEDDING_PROVIDER, LLM_PROVIDER,
+#   STORAGE_BACKEND, SECRET_KEY, LOG_LEVEL
+# ─────────────────────────────────────────────────────────────────────────────
+
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+# System dependencies — Tesseract required for image/OCR ingestion
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    dos2unix \
+    tesseract-ocr \
+    && rm -rf /var/lib/apt/lists/*
+
+# Fast dependency installation via uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+COPY pyproject.toml /app/
+RUN uv pip install --system --no-cache ".[dev]"
+
+# Copy application code — worker only needs app/ and alembic for model imports
+COPY alembic.ini /app/
+COPY alembic /app/alembic
+COPY app /app/app
+
+# Worker entrypoint — runs python -m app.worker
+CMD ["python", "-m", "app.worker"]
